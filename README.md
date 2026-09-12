@@ -57,9 +57,20 @@ docker-compose.yml   Postgres 16 for local dev
 - [x] Schema (DDL, constraints, indexes, trigger, functions, views) — `db/schema.sql`
 - [x] Synthetic dataset generator — `db/seed.py`
 - [x] Backend read CRUD (departments/students/companies/drives) — `backend/`
-- [ ] Auth (JWT, bcrypt, student/admin roles)
-- [ ] Admin drive management + shortlisting + offers
-- [ ] Explicit multi-table offer-acceptance transaction
-- [ ] Analytics endpoints
+- [x] Auth (JWT, bcrypt, student/admin roles) — `backend/routes/auth.py`
+- [x] Admin drive management + shortlisting + offers — `backend/routes/drives.py`, `applications.py`
+- [x] Explicit multi-table offer-acceptance transaction — `backend/services/offer_service.py`
+- [x] Analytics endpoints (views + package/branch + cgpa-vs-outcome) — `backend/routes/analytics.py`
 - [ ] ML microservice
 - [ ] Frontend (React/Vite, minimal)
+
+## API summary (once auth is added, everything below api/departments requires `Authorization: Bearer <token>`)
+
+- `POST /api/auth/student/signup`, `/student/login`, `/admin/login`, `GET /me`
+- `GET /api/departments`
+- `GET /api/students` (admin), `GET /api/students/:id` (self/admin), `GET /api/students/:id/eligible-drives`, `GET /api/students/:id/applications`
+- `GET /api/companies`, `GET /api/companies/:id`
+- `GET/POST /api/drives`, `PUT /api/drives/:id` (admin write), `GET /api/drives/:id/applicants` (admin)
+- `POST /api/applications` (student applies), `GET /api/applications/:id`, `PUT /api/applications/:id/status` (admin), `POST /api/applications/:id/interview-rounds` (admin), `POST /api/applications/:id/offer` (admin — fires the placement_status trigger)
+- `GET /api/offers/:id`, `POST /api/offers/:id/accept`, `POST /api/offers/:id/decline` (the explicit transaction demo)
+- `GET /api/analytics/overview`, `/department-stats`, `/company-stats?top=N`, `/package-by-branch`, `/cgpa-vs-outcome` (all admin-only)

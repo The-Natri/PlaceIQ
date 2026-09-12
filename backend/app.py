@@ -8,6 +8,7 @@ from flask_cors import CORS
 
 import db
 from config import Config
+from routes.analytics import analytics_bp
 from routes.applications import applications_bp
 from routes.auth import auth_bp
 from routes.companies import companies_bp
@@ -35,6 +36,7 @@ def create_app():
     app.register_blueprint(drives_bp)
     app.register_blueprint(applications_bp)
     app.register_blueprint(offers_bp)
+    app.register_blueprint(analytics_bp)
 
     @app.get("/api/health")
     def health():
