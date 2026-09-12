@@ -3,7 +3,11 @@
 DBMS academic project: Flask + PostgreSQL + React, with a small Flask ML
 microservice for a placement-probability widget. The database design
 (schema, triggers, procedures, views) is the primary deliverable — see
-`docs/er-diagram.md` and `docs/normalization.md`.
+`docs/er-diagram.md` and `docs/normalization.md`. An Oracle/SQL*Plus port
+of the schema (for professors who specifically want SQL*Plus) lives at
+`db/schema_oracle.sql`, with every divergence explained in
+`docs/oracle-differences.md` — verified against a real Oracle 21c instance,
+not just written. `docs/viva-cheatsheet.md` is a one-page pre-viva reference.
 
 ## Repo layout
 
