@@ -1,11 +1,13 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from db import get_cursor
+from utils.auth_middleware import require_auth
 
 students_bp = Blueprint("students", __name__, url_prefix="/api/students")
 
 
 @students_bp.get("")
+@require_auth(roles=["admin"])
 def list_students():
     """
     Admin-facing student listing with optional filters. Filters are appended
@@ -45,8 +47,25 @@ def list_students():
     return jsonify(rows)
 
 
+def _forbid_unless_self_or_admin(student_id):
+    """
+    Shared authorization check: a student may only read their own record;
+    an admin/coordinator may read anyone's. Returns a (response, status)
+    tuple to return early on, or None if the caller is allowed through.
+    """
+    user = g.current_user
+    if user["role"] == "student" and int(user["sub"]) != student_id:
+        return jsonify({"error": "Forbidden: you may only access your own record"}), 403
+    return None
+
+
 @students_bp.get("/<int:student_id>")
+@require_auth()
 def get_student(student_id):
+    forbidden = _forbid_unless_self_or_admin(student_id)
+    if forbidden:
+        return forbidden
+
     with get_cursor() as cur:
         cur.execute(
             """
@@ -79,6 +98,7 @@ def get_student(student_id):
 
 
 @students_bp.get("/<int:student_id>/eligible-drives")
+@require_auth()
 def eligible_drives(student_id):
     """
     Delegates entirely to the DB's fn_get_eligible_drives() stored function
@@ -86,6 +106,10 @@ def eligible_drives(student_id):
     department eligibility rule here — this is the "eligibility check as a
     stored procedure, called from the backend" requirement in practice.
     """
+    forbidden = _forbid_unless_self_or_admin(student_id)
+    if forbidden:
+        return forbidden
+
     with get_cursor() as cur:
         cur.execute(
             """

@@ -1,11 +1,13 @@
 from flask import Blueprint, jsonify, request
 
 from db import get_cursor
+from utils.auth_middleware import require_auth
 
 drives_bp = Blueprint("drives", __name__, url_prefix="/api/drives")
 
 
 @drives_bp.get("")
+@require_auth()
 def list_drives():
     status = request.args.get("status")
     conditions = []
@@ -31,6 +33,7 @@ def list_drives():
 
 
 @drives_bp.get("/<int:drive_id>")
+@require_auth()
 def get_drive(drive_id):
     with get_cursor() as cur:
         cur.execute(
@@ -65,6 +68,7 @@ def get_drive(drive_id):
 
 
 @drives_bp.get("/<int:drive_id>/applicants")
+@require_auth(roles=["admin"])
 def drive_applicants(drive_id):
     """Admin view: everyone who applied to this drive, for shortlisting."""
     with get_cursor() as cur:

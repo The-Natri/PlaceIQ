@@ -1,11 +1,13 @@
 from flask import Blueprint, jsonify
 
 from db import get_cursor
+from utils.auth_middleware import require_auth
 
 companies_bp = Blueprint("companies", __name__, url_prefix="/api/companies")
 
 
 @companies_bp.get("")
+@require_auth()
 def list_companies():
     with get_cursor() as cur:
         cur.execute(
@@ -17,6 +19,7 @@ def list_companies():
 
 
 @companies_bp.get("/<int:company_id>")
+@require_auth()
 def get_company(company_id):
     with get_cursor() as cur:
         cur.execute(

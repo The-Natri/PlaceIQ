@@ -8,6 +8,7 @@ from flask_cors import CORS
 
 import db
 from config import Config
+from routes.auth import auth_bp
 from routes.companies import companies_bp
 from routes.departments import departments_bp
 from routes.drives import drives_bp
@@ -25,6 +26,7 @@ def create_app():
 
     db.init_pool()
 
+    app.register_blueprint(auth_bp)
     app.register_blueprint(departments_bp)
     app.register_blueprint(students_bp)
     app.register_blueprint(companies_bp)
