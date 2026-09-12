@@ -1,5 +1,7 @@
+import requests
 from flask import Blueprint, g, jsonify, request
 
+from config import Config
 from db import get_cursor
 from utils.auth_middleware import require_auth
 
@@ -124,6 +126,55 @@ def eligible_drives(student_id):
         )
         rows = cur.fetchall()
     return jsonify(rows)
+
+
+@students_bp.get("/<int:student_id>/placement-probability")
+@require_auth()
+def placement_probability(student_id):
+    """
+    Student dashboard's ML widget. The main backend owns fetching the
+    student's own current features from Postgres (cgpa, backlogs, dept_id,
+    skill_count) and hands them to the separate ML microservice's /predict
+    endpoint — the ML service itself never touches the database directly at
+    request time (only at training time, in ml-service/train.py), which
+    keeps the two services' responsibilities cleanly split.
+    """
+    forbidden = _forbid_unless_self_or_admin(student_id)
+    if forbidden:
+        return forbidden
+
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT s.cgpa, s.backlogs, s.dept_id, COUNT(ss.skill_id) AS skill_count
+            FROM student s
+            LEFT JOIN student_skill ss ON ss.student_id = s.student_id
+            WHERE s.student_id = %s
+            GROUP BY s.student_id, s.cgpa, s.backlogs, s.dept_id
+            """,
+            (student_id,),
+        )
+        features = cur.fetchone()
+
+    if features is None:
+        return jsonify({"error": "Student not found"}), 404
+
+    # cgpa comes back as a Decimal (NUMERIC column) — not JSON-serializable
+    # as-is, so it's cast to float before the request body is built.
+    payload = {
+        "cgpa": float(features["cgpa"]),
+        "backlogs": features["backlogs"],
+        "dept_id": features["dept_id"],
+        "skill_count": features["skill_count"],
+    }
+
+    try:
+        resp = requests.post(f"{Config.ML_SERVICE_URL}/predict", json=payload, timeout=5)
+        resp.raise_for_status()
+    except requests.RequestException:
+        return jsonify({"error": "ML service is currently unavailable"}), 503
+
+    return jsonify(resp.json())
 
 
 @students_bp.get("/<int:student_id>/applications")
