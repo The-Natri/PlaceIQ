@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16
+    container_name: placement_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: placement_admin
+      POSTGRES_PASSWORD: placement_dev_password
+      POSTGRES_DB: placement_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - placement_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U placement_admin -d placement_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  placement_db_data:
