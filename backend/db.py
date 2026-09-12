@@ -66,3 +66,26 @@ def get_cursor(commit: bool = False):
             cur.close()
     finally:
         _pool.putconn(conn)
+
+
+@contextlib.contextmanager
+def get_connection():
+    """
+    Hands back the raw pooled connection with NO commit/rollback wrapping,
+    for services that need to show an explicit multi-statement transaction
+    inline (BEGIN is implicit on the first statement in psycopg2; the
+    service calls conn.commit()/conn.rollback() itself) — see
+    services/offer_service.py, which is the offer-acceptance transaction
+    demo the assignment spec asks to be "visible, not hidden behind an
+    ORM's auto transaction". get_cursor() above already commits/rolls back
+    explicitly too, but this variant additionally lets the caller inspect
+    intermediate query results (e.g. a RETURNING row) before deciding
+    whether to commit.
+    """
+    if _pool is None:
+        init_pool()
+    conn = _pool.getconn()
+    try:
+        yield conn
+    finally:
+        _pool.putconn(conn)

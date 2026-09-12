@@ -1,9 +1,99 @@
-from flask import Blueprint, jsonify, request
+import psycopg2.errors
+from flask import Blueprint, g, jsonify, request
 
 from db import get_cursor
 from utils.auth_middleware import require_auth
 
 drives_bp = Blueprint("drives", __name__, url_prefix="/api/drives")
+
+DRIVE_EDITABLE_FIELDS = [
+    "job_role", "drive_date", "package_lpa", "min_cgpa", "max_backlogs",
+    "drive_type", "status",
+]
+
+
+@drives_bp.post("")
+@require_auth(roles=["admin"])
+def create_drive():
+    """
+    Admin creates a drive with its eligibility rule (min_cgpa, max_backlogs)
+    and, optionally, a list of restricted department ids. Both the drive row
+    and its eligible_dept_ids rows are written in ONE commit (get_cursor's
+    single connection + single commit) so a drive can never end up
+    half-created — e.g. saved with cutoffs but missing its branch
+    restriction because a second request failed partway through.
+    """
+    body = request.get_json(silent=True) or {}
+    required = ["company_id", "job_role", "drive_date", "package_lpa", "min_cgpa", "max_backlogs"]
+    missing = [f for f in required if body.get(f) in (None, "")]
+    if missing:
+        return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
+
+    eligible_dept_ids = body.get("eligible_dept_ids") or []  # [] => open to all departments
+
+    try:
+        with get_cursor(commit=True) as cur:
+            cur.execute(
+                """
+                INSERT INTO drive
+                    (company_id, coordinator_id, job_role, drive_date, package_lpa,
+                     min_cgpa, max_backlogs, drive_type, status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING drive_id
+                """,
+                (body["company_id"], g.current_user["sub"], body["job_role"], body["drive_date"],
+                 body["package_lpa"], body["min_cgpa"], body["max_backlogs"],
+                 body.get("drive_type", "Full-Time"), body.get("status", "Upcoming")),
+            )
+            drive_id = cur.fetchone()["drive_id"]
+
+            for dept_id in eligible_dept_ids:
+                cur.execute(
+                    "INSERT INTO drive_eligible_dept (drive_id, dept_id) VALUES (%s,%s)",
+                    (drive_id, dept_id),
+                )
+    except psycopg2.errors.ForeignKeyViolation:
+        return jsonify({"error": "Invalid company_id or dept_id"}), 400
+    except psycopg2.errors.CheckViolation as e:
+        return jsonify({"error": f"Invalid field value: {e.diag.constraint_name}"}), 400
+
+    return jsonify({"drive_id": drive_id}), 201
+
+
+@drives_bp.put("/<int:drive_id>")
+@require_auth(roles=["admin"])
+def update_drive(drive_id):
+    body = request.get_json(silent=True) or {}
+    updates = {k: v for k, v in body.items() if k in DRIVE_EDITABLE_FIELDS}
+    eligible_dept_ids = body.get("eligible_dept_ids")  # None => leave restrictions unchanged
+
+    if not updates and eligible_dept_ids is None:
+        return jsonify({"error": "No editable fields provided"}), 400
+
+    try:
+        with get_cursor(commit=True) as cur:
+            if updates:
+                set_clause = ", ".join(f"{col} = %s" for col in updates)
+                cur.execute(
+                    f"UPDATE drive SET {set_clause} WHERE drive_id = %s RETURNING drive_id",
+                    [*updates.values(), drive_id],
+                )
+                if cur.fetchone() is None:
+                    return jsonify({"error": "Drive not found"}), 404
+
+            if eligible_dept_ids is not None:
+                cur.execute("DELETE FROM drive_eligible_dept WHERE drive_id = %s", (drive_id,))
+                for dept_id in eligible_dept_ids:
+                    cur.execute(
+                        "INSERT INTO drive_eligible_dept (drive_id, dept_id) VALUES (%s,%s)",
+                        (drive_id, dept_id),
+                    )
+    except psycopg2.errors.CheckViolation as e:
+        return jsonify({"error": f"Invalid field value: {e.diag.constraint_name}"}), 400
+    except psycopg2.errors.ForeignKeyViolation:
+        return jsonify({"error": "Invalid dept_id in eligible_dept_ids"}), 400
+
+    return jsonify({"drive_id": drive_id, "updated": True})
 
 
 @drives_bp.get("")

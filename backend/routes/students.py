@@ -124,3 +124,29 @@ def eligible_drives(student_id):
         )
         rows = cur.fetchall()
     return jsonify(rows)
+
+
+@students_bp.get("/<int:student_id>/applications")
+@require_auth()
+def student_applications(student_id):
+    """Powers the student dashboard's application status tracker."""
+    forbidden = _forbid_unless_self_or_admin(student_id)
+    if forbidden:
+        return forbidden
+
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT a.application_id, a.status, a.applied_at,
+                   dr.drive_id, dr.job_role, dr.package_lpa, dr.drive_date,
+                   c.company_name
+            FROM application a
+            JOIN drive dr ON dr.drive_id = a.drive_id
+            JOIN company c ON c.company_id = dr.company_id
+            WHERE a.student_id = %s
+            ORDER BY a.applied_at DESC
+            """,
+            (student_id,),
+        )
+        rows = cur.fetchall()
+    return jsonify(rows)
