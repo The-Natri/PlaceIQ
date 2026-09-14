@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Navbar } from "./components/Navbar";
 import { useAuth } from "./auth/AuthContext";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
@@ -11,34 +11,73 @@ import { AdminAnalytics } from "./pages/AdminAnalytics";
 
 function Home() {
   const { user, loading } = useAuth();
+
   if (loading) return <p>Loading...</p>;
-  if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={user.role === "student" ? "/student" : "/admin"} replace />;
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return (
+    <Navigate
+      to={user.role === "student" ? "/student" : "/admin"}
+      replace
+    />
+  );
 }
 
 export default function App() {
+  const location = useLocation();
+
+  const hideNavbar =
+    location.pathname === "/login" ||
+    location.pathname === "/signup";
+
   return (
     <>
-      <Navbar />
+      {!hideNavbar && <Navbar />}
+
       <Routes>
         <Route path="/" element={<Home />} />
+
         <Route path="/login" element={<Login />} />
+
         <Route path="/signup" element={<Signup />} />
+
         <Route
           path="/student"
-          element={<ProtectedRoute role="student"><StudentDashboard /></ProtectedRoute>}
+          element={
+            <ProtectedRoute role="student">
+              <StudentDashboard />
+            </ProtectedRoute>
+          }
         />
+
         <Route
           path="/admin"
-          element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>}
+          element={
+            <ProtectedRoute role="admin">
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
         />
+
         <Route
           path="/admin/drives/:driveId"
-          element={<ProtectedRoute role="admin"><AdminDriveDetail /></ProtectedRoute>}
+          element={
+            <ProtectedRoute role="admin">
+              <AdminDriveDetail />
+            </ProtectedRoute>
+          }
         />
+
         <Route
           path="/admin/analytics"
-          element={<ProtectedRoute role="admin"><AdminAnalytics /></ProtectedRoute>}
+          element={
+            <ProtectedRoute role="admin">
+              <AdminAnalytics />
+            </ProtectedRoute>
+          }
         />
       </Routes>
     </>
