@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth/AuthContext";
+import "./Signup.css";
 
 const initialForm = {
-  reg_no: "", name: "", email: "", password: "",
-  dept_id: "", cgpa: "", backlogs: "0", batch_year: new Date().getFullYear(),
+  reg_no: "",
+  name: "",
+  email: "",
+  password: "",
+  dept_id: "",
+  cgpa: "",
+  backlogs: "0",
+  batch_year: new Date().getFullYear(),
   phone: "",
 };
 
@@ -13,6 +20,8 @@ export function Signup() {
   const [departments, setDepartments] = useState([]);
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
   const { signupStudent } = useAuth();
   const navigate = useNavigate();
 
@@ -27,6 +36,7 @@ export function Signup() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+
     try {
       await signupStudent({
         ...form,
@@ -35,6 +45,7 @@ export function Signup() {
         backlogs: Number(form.backlogs),
         batch_year: Number(form.batch_year),
       });
+
       navigate("/student");
     } catch (err) {
       setError(err.message);
@@ -42,44 +53,183 @@ export function Signup() {
   }
 
   return (
-    <div className="page-narrow">
-      <h1>Student Signup</h1>
-      <form onSubmit={handleSubmit}>
-        <label>Registration No.
-          <input value={form.reg_no} onChange={update("reg_no")} required />
-        </label>
-        <label>Name
-          <input value={form.name} onChange={update("name")} required />
-        </label>
-        <label>Email
-          <input type="email" value={form.email} onChange={update("email")} required />
-        </label>
-        <label>Password
-          <input type="password" value={form.password} onChange={update("password")} required minLength={6} />
-        </label>
-        <label>Department
-          <select value={form.dept_id} onChange={update("dept_id")} required>
-            <option value="">Select...</option>
-            {departments.map((d) => (
-              <option key={d.dept_id} value={d.dept_id}>{d.dept_name}</option>
-            ))}
-          </select>
-        </label>
-        <label>CGPA
-          <input type="number" step="0.01" min="0" max="10" value={form.cgpa} onChange={update("cgpa")} required />
-        </label>
-        <label>Backlogs
-          <input type="number" min="0" value={form.backlogs} onChange={update("backlogs")} required />
-        </label>
-        <label>Batch Year
-          <input type="number" value={form.batch_year} onChange={update("batch_year")} required />
-        </label>
-        <label>Phone (optional)
-          <input value={form.phone} onChange={update("phone")} />
-        </label>
-        {error && <p className="error">{error}</p>}
-        <button type="submit">Sign up</button>
-      </form>
+    <div className="signup-page">
+      <div className="signup-container">
+
+        <div className="signup-brand">
+          <div className="signup-logo">PI</div>
+
+          <h1>PlaceIQ</h1>
+
+          <h2>Create your student profile.</h2>
+
+          <p>
+            Register once and manage your entire placement journey from
+            one place.
+          </p>
+
+          <div className="signup-features">
+            <span>✓ Discover eligible drives</span>
+            <span>✓ Apply to companies</span>
+            <span>✓ Track interview progress</span>
+            <span>✓ Manage placement offers</span>
+          </div>
+        </div>
+
+        <div className="signup-section">
+          <div className="signup-card">
+
+            <div className="signup-heading">
+              <span className="signup-eyebrow">STUDENT REGISTRATION</span>
+              <h2>Create your account</h2>
+              <p>Enter your academic and contact details.</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="signup-form">
+
+              <div className="signup-grid">
+                <div className="signup-field">
+                  <label htmlFor="signup-reg-no">Registration No.</label>
+                  <input
+                    id="signup-reg-no"
+                    value={form.reg_no}
+                    onChange={update("reg_no")}
+                    placeholder="24BLCXXXX"
+                    required
+                  />
+                </div>
+
+                <div className="signup-field">
+                  <label htmlFor="signup-name">Full Name</label>
+                  <input
+                    id="signup-name"
+                    value={form.name}
+                    onChange={update("name")}
+                    placeholder="Your name"
+                    required
+                  />
+                </div>
+
+                <div className="signup-field signup-full">
+                  <label htmlFor="signup-email">Email address</label>
+                  <input
+                    id="signup-email"
+                    type="email"
+                    value={form.email}
+                    onChange={update("email")}
+                    placeholder="student@college.edu"
+                    required
+                  />
+                </div>
+
+                <div className="signup-field signup-full">
+                  <label htmlFor="signup-password">Password</label>
+
+                  <div className="signup-password-wrapper">
+                    <input
+                      id="signup-password"
+                      type={showPassword ? "text" : "password"}
+                      value={form.password}
+                      onChange={update("password")}
+                      placeholder="Minimum 6 characters"
+                      required
+                      minLength={6}
+                    />
+
+                    <button
+                      type="button"
+                      className="signup-password-toggle"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="signup-field signup-full">
+                  <label htmlFor="signup-dept">Department</label>
+
+                  <select
+                    id="signup-dept"
+                    value={form.dept_id}
+                    onChange={update("dept_id")}
+                    required
+                  >
+                    <option value="">Select department</option>
+
+                    {departments.map((d) => (
+                      <option key={d.dept_id} value={d.dept_id}>
+                        {d.dept_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="signup-field">
+                  <label htmlFor="signup-cgpa">CGPA</label>
+                  <input
+                    id="signup-cgpa"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="10"
+                    value={form.cgpa}
+                    onChange={update("cgpa")}
+                    placeholder="8.50"
+                    required
+                  />
+                </div>
+
+                <div className="signup-field">
+                  <label htmlFor="signup-backlogs">Backlogs</label>
+                  <input
+                    id="signup-backlogs"
+                    type="number"
+                    min="0"
+                    value={form.backlogs}
+                    onChange={update("backlogs")}
+                    required
+                  />
+                </div>
+
+                <div className="signup-field">
+                  <label htmlFor="signup-batch-year">Batch Year</label>
+                  <input
+                    id="signup-batch-year"
+                    type="number"
+                    value={form.batch_year}
+                    onChange={update("batch_year")}
+                    required
+                  />
+                </div>
+
+                <div className="signup-field">
+                  <label htmlFor="signup-phone">Phone</label>
+                  <input
+                    id="signup-phone"
+                    type="tel"
+                    value={form.phone}
+                    onChange={update("phone")}
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+
+              {error && <div className="signup-error">{error}</div>}
+
+              <button type="submit" className="signup-button">
+                Create Account
+              </button>
+            </form>
+
+            <p className="signup-login-text">
+              Already have an account?{" "}
+              <Link to="/login">Sign in</Link>
+            </p>
+
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

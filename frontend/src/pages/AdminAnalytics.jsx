@@ -1,5 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Users,
+  UserCheck,
+  Building2,
+  BriefcaseBusiness,
+  BadgeCheck,
+  TrendingUp,
+} from "lucide-react";
 import { api } from "../api";
+import "./AdminAnalytics.css";
 
 export function AdminAnalytics() {
   const [overview, setOverview] = useState(null);
@@ -17,131 +26,281 @@ export function AdminAnalytics() {
   }, []);
 
   return (
-    <div className="page">
-      <h1>Analytics</h1>
+    <main className="analytics-page">
+      <section className="analytics-hero">
+        <div>
+          <p className="analytics-eyebrow">PLACEMENT INSIGHTS</p>
+          <h1>Analytics</h1>
+          <p className="analytics-subtitle">
+            Monitor placement performance, recruiters and student outcomes.
+          </p>
+        </div>
+      </section>
 
       {overview && (
-        <section className="card">
-          <h2>Overview</h2>
-          <div className="stat-row">
-            <Stat label="Students" value={overview.total_students} />
-            <Stat label="Placed" value={overview.placed_students} />
-            <Stat label="Placement %" value={`${overview.overall_placement_pct}%`} />
-            <Stat label="Companies" value={overview.total_companies} />
-            <Stat label="Drives" value={overview.total_drives} />
-            <Stat label="Offers (Accepted)" value={`${overview.total_offers} (${overview.accepted_offers})`} />
-          </div>
+        <section className="analytics-overview-grid">
+          <AnalyticsStat
+            icon={<Users size={20} />}
+            label="Students"
+            value={overview.total_students}
+          />
+
+          <AnalyticsStat
+            icon={<UserCheck size={20} />}
+            label="Placed"
+            value={overview.placed_students}
+          />
+
+          <AnalyticsStat
+            icon={<TrendingUp size={20} />}
+            label="Placement Rate"
+            value={`${overview.overall_placement_pct}%`}
+          />
+
+          <AnalyticsStat
+            icon={<Building2 size={20} />}
+            label="Companies"
+            value={overview.total_companies}
+          />
+
+          <AnalyticsStat
+            icon={<BriefcaseBusiness size={20} />}
+            label="Drives"
+            value={overview.total_drives}
+          />
+
+          <AnalyticsStat
+            icon={<BadgeCheck size={20} />}
+            label="Offers"
+            value={overview.total_offers}
+            note={`${overview.accepted_offers} accepted`}
+          />
         </section>
       )}
 
-      <section className="card">
-        <h2>Placement % by Department</h2>
-        <table>
-          <thead><tr><th>Department</th><th>Total</th><th>Placed</th><th>%</th></tr></thead>
-          <tbody>
-            {deptStats.map((d) => (
-              <tr key={d.dept_id}>
-                <td>{d.dept_name}</td>
-                <td>{d.total_students}</td>
-                <td>{d.placed_students}</td>
-                <td>{d.placement_percentage}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <section className="analytics-grid">
+        <section className="analytics-card">
+          <div className="analytics-card-header">
+            <div>
+              <p className="analytics-eyebrow">DEPARTMENT PERFORMANCE</p>
+              <h2>Placement % by Department</h2>
+            </div>
+          </div>
+
+          <div className="department-performance-list">
+            {deptStats.map((d) => {
+              const percentage = Number(d.placement_percentage || 0);
+
+              return (
+                <div className="department-performance-item" key={d.dept_id}>
+                  <div className="department-performance-top">
+                    <div>
+                      <strong>{d.dept_name}</strong>
+                      <span>
+                        {d.placed_students} of {d.total_students} placed
+                      </span>
+                    </div>
+
+                    <strong className="percentage-value">
+                      {percentage}%
+                    </strong>
+                  </div>
+
+                  <div className="analytics-progress">
+                    <div
+                      className="analytics-progress-fill"
+                      style={{
+                        width: `${Math.min(percentage, 100)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="analytics-card">
+          <div className="analytics-card-header">
+            <div>
+              <p className="analytics-eyebrow">ACADEMIC CORRELATION</p>
+              <h2>CGPA vs Placement Outcome</h2>
+            </div>
+          </div>
+
+          <CgpaBuckets rows={scatter} />
+        </section>
       </section>
 
-      <section className="card">
-        <h2>Top Recruiters (by offer count)</h2>
-        <table>
-          <thead><tr><th>Company</th><th>Offers</th><th>Avg LPA</th><th>Max LPA</th><th>Min LPA</th></tr></thead>
-          <tbody>
-            {companyStats.map((c) => (
-              <tr key={c.company_id}>
-                <td>{c.company_name}</td>
-                <td>{c.offers_count}</td>
-                <td>{c.avg_package_lpa}</td>
-                <td>{c.max_package_lpa}</td>
-                <td>{c.min_package_lpa}</td>
+      <section className="analytics-card analytics-wide-card">
+        <div className="analytics-card-header">
+          <div>
+            <p className="analytics-eyebrow">RECRUITERS</p>
+            <h2>Top Recruiters</h2>
+            <p>Companies ranked by total number of offers.</p>
+          </div>
+        </div>
+
+        <div className="analytics-table-wrapper">
+          <table className="analytics-table">
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Offers</th>
+                <th>Avg LPA</th>
+                <th>Max LPA</th>
+                <th>Min LPA</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+
+            <tbody>
+              {companyStats.map((c) => (
+                <tr key={c.company_id}>
+                  <td>
+                    <div className="analytics-company-cell">
+                      <div className="analytics-company-avatar">
+                        {c.company_name?.charAt(0)}
+                      </div>
+
+                      <strong>{c.company_name}</strong>
+                    </div>
+                  </td>
+
+                  <td>
+                    <span className="offer-count-pill">
+                      {c.offers_count}
+                    </span>
+                  </td>
+
+                  <td>{c.avg_package_lpa} LPA</td>
+                  <td>{c.max_package_lpa} LPA</td>
+                  <td>{c.min_package_lpa} LPA</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
-      <section className="card">
-        <h2>Package by Branch</h2>
-        <table>
-          <thead><tr><th>Department</th><th>Offers</th><th>Avg LPA</th><th>Max LPA</th><th>Min LPA</th></tr></thead>
-          <tbody>
-            {packageByBranch.map((p) => (
-              <tr key={p.dept_name}>
-                <td>{p.dept_name}</td>
-                <td>{p.offers_count}</td>
-                <td>{p.avg_package_lpa}</td>
-                <td>{p.max_package_lpa}</td>
-                <td>{p.min_package_lpa}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+      <section className="analytics-card analytics-wide-card">
+        <div className="analytics-card-header">
+          <div>
+            <p className="analytics-eyebrow">COMPENSATION</p>
+            <h2>Package by Branch</h2>
+            <p>
+              Compare offer volume and salary packages across departments.
+            </p>
+          </div>
+        </div>
 
-      <section className="card">
-        <h2>CGPA vs Outcome</h2>
-        <p className="muted">
-          Raw per-student data points ({scatter.length} students) — a scatter/bar chart belongs
-          here once the frontend is restyled; showing a compact table for now.
-        </p>
-        <CgpaBuckets rows={scatter} />
+        <div className="package-grid">
+          {packageByBranch.map((p) => (
+            <div className="package-card" key={p.dept_name}>
+              <div className="package-card-header">
+                <strong>{p.dept_name}</strong>
+
+                <span>
+                  {p.offers_count} offers
+                </span>
+              </div>
+
+              <div className="package-average">
+                <span>Average Package</span>
+                <strong>{p.avg_package_lpa} LPA</strong>
+              </div>
+
+              <div className="package-range">
+                <div>
+                  <span>Minimum</span>
+                  <strong>{p.min_package_lpa} LPA</strong>
+                </div>
+
+                <div>
+                  <span>Maximum</span>
+                  <strong>{p.max_package_lpa} LPA</strong>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
-    </div>
+    </main>
   );
 }
 
-function Stat({ label, value }) {
+function AnalyticsStat({ icon, label, value, note }) {
   return (
-    <div className="stat-tile">
-      <div className="stat-value">{value}</div>
-      <div className="stat-label">{label}</div>
+    <div className="analytics-stat-card">
+      <div className="analytics-stat-icon">
+        {icon}
+      </div>
+
+      <div className="analytics-stat-content">
+        <span>{label}</span>
+        <strong>{value}</strong>
+
+        {note && <small>{note}</small>}
+      </div>
     </div>
   );
 }
 
-// Cheap bucketed summary so the CGPA-vs-outcome correlation is visible
-// without pulling in a charting library — a placeholder for the scatter
-// chart the teammate will likely add during the visual redesign.
 function CgpaBuckets({ rows }) {
-  const buckets = [
-    { label: "8.5+", min: 8.5, max: 10.01 },
-    { label: "7.5 - 8.5", min: 7.5, max: 8.5 },
-    { label: "6.5 - 7.5", min: 6.5, max: 7.5 },
-    { label: "< 6.5", min: 0, max: 6.5 },
-  ];
-  const summary = buckets.map((b) => {
-    const inBucket = rows.filter((r) => r.cgpa >= b.min && r.cgpa < b.max);
-    const placed = inBucket.filter((r) => r.placement_status === "Placed");
-    return {
-      ...b,
-      total: inBucket.length,
-      placed: placed.length,
-      pct: inBucket.length ? ((100 * placed.length) / inBucket.length).toFixed(1) : "0",
-    };
-  });
+  const summary = useMemo(() => {
+    const buckets = [
+      { label: "8.5+", min: 8.5, max: 10.01 },
+      { label: "7.5 - 8.5", min: 7.5, max: 8.5 },
+      { label: "6.5 - 7.5", min: 6.5, max: 7.5 },
+      { label: "< 6.5", min: 0, max: 6.5 },
+    ];
+
+    return buckets.map((b) => {
+      const inBucket = rows.filter(
+        (r) => r.cgpa >= b.min && r.cgpa < b.max
+      );
+
+      const placed = inBucket.filter(
+        (r) => r.placement_status === "Placed"
+      );
+
+      const percentage = inBucket.length
+        ? ((100 * placed.length) / inBucket.length).toFixed(1)
+        : "0";
+
+      return {
+        ...b,
+        total: inBucket.length,
+        placed: placed.length,
+        pct: percentage,
+      };
+    });
+  }, [rows]);
 
   return (
-    <table>
-      <thead><tr><th>CGPA Band</th><th>Total</th><th>Placed</th><th>%</th></tr></thead>
-      <tbody>
-        {summary.map((b) => (
-          <tr key={b.label}>
-            <td>{b.label}</td>
-            <td>{b.total}</td>
-            <td>{b.placed}</td>
-            <td>{b.pct}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="cgpa-bucket-list">
+      {summary.map((b) => (
+        <div className="cgpa-bucket" key={b.label}>
+          <div className="cgpa-bucket-header">
+            <div>
+              <strong>{b.label}</strong>
+              <span>
+                {b.placed} of {b.total} placed
+              </span>
+            </div>
+
+            <strong>{b.pct}%</strong>
+          </div>
+
+          <div className="cgpa-bar">
+            <div
+              className="cgpa-bar-fill"
+              style={{
+                width: `${Math.min(Number(b.pct), 100)}%`,
+              }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
