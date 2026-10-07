@@ -96,6 +96,15 @@ def get_student(student_id):
         )
         student["skills"] = cur.fetchall()
 
+        # Window-function view (schema.sql Section 9): rank and percentile of
+        # this student's CGPA within their own department.
+        cur.execute(
+            "SELECT cgpa_rank_in_dept, dept_size, cgpa_percentile_in_dept "
+            "FROM student_cgpa_standing_view WHERE student_id = %s",
+            (student_id,),
+        )
+        student["cgpa_standing"] = cur.fetchone()
+
     return jsonify(student)
 
 

@@ -93,6 +93,76 @@ def package_by_branch():
     return jsonify(rows)
 
 
+@analytics_bp.get("/top-offers-per-dept")
+@require_auth(roles=["admin"])
+def top_offers_per_dept():
+    """
+    Top N offers in each department, from dept_offer_ranking_view (schema.sql
+    Section 9). The RANK() window function is computed in the view; "top N"
+    is a plain filter on its result — a window function's output can't be
+    filtered in the same SELECT that computes it, which is why the ranking
+    lives in a view and the filter lives here.
+    """
+    n = request.args.get("n", default=3, type=int)
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT dept_name, rank_in_dept, name, reg_no, company_name, offered_package_lpa
+            FROM dept_offer_ranking_view
+            WHERE rank_in_dept <= %s
+            ORDER BY dept_name, rank_in_dept, name
+            """,
+            (n,),
+        )
+        rows = cur.fetchall()
+    return jsonify(rows)
+
+
+@analytics_bp.get("/placement-timeline")
+@require_auth(roles=["admin"])
+def placement_timeline():
+    """Monthly offers with running total and month-over-month change (placement_timeline_view)."""
+    with get_cursor() as cur:
+        cur.execute("SELECT * FROM placement_timeline_view ORDER BY month")
+        rows = cur.fetchall()
+    return jsonify(rows)
+
+
+@analytics_bp.get("/company-dept-matrix")
+@require_auth(roles=["admin"])
+def company_dept_matrix():
+    """
+    Reads the materialized view (schema.sql Section 10). This is a stored
+    snapshot, not live data — refreshed_at says how old it is, and
+    POST /refresh-matrix brings it up to date.
+    """
+    with get_cursor() as cur:
+        cur.execute(
+            "SELECT company_name, dept_name, offers_count, avg_package_lpa, refreshed_at "
+            "FROM mv_company_dept_placements ORDER BY company_name, dept_name"
+        )
+        rows = cur.fetchall()
+    refreshed_at = rows[0]["refreshed_at"] if rows else None
+    for row in rows:
+        del row["refreshed_at"]
+    return jsonify({"refreshed_at": refreshed_at, "cells": rows})
+
+
+@analytics_bp.post("/refresh-matrix")
+@require_auth(roles=["admin"])
+def refresh_matrix():
+    """
+    REFRESH ... CONCURRENTLY rebuilds the snapshot without locking out
+    readers of the old one while it runs (possible because the view has a
+    UNIQUE index). It can't run inside a transaction block, hence autocommit.
+    """
+    with get_cursor(autocommit=True) as cur:
+        cur.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_company_dept_placements")
+        cur.execute("SELECT MAX(refreshed_at) AS refreshed_at FROM mv_company_dept_placements")
+        refreshed_at = cur.fetchone()["refreshed_at"]
+    return jsonify({"refreshed_at": refreshed_at})
+
+
 @analytics_bp.get("/cgpa-vs-outcome")
 @require_auth(roles=["admin"])
 def cgpa_vs_outcome():

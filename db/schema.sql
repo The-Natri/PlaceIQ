@@ -277,6 +277,13 @@ CREATE INDEX idx_drive_company ON drive(company_id);
 CREATE OR REPLACE FUNCTION trg_fn_offer_insert_update_placement()
 RETURNS TRIGGER AS $$
 BEGIN
+    -- An offer that is already Declined when inserted (only possible from
+    -- bulk loads like db/seed.py — the app always inserts Pending) must not
+    -- mark the student Placed.
+    IF NEW.status = 'Declined' THEN
+        RETURN NEW;
+    END IF;
+
     UPDATE student
     SET placement_status = 'Placed'
     WHERE student_id = (
@@ -433,3 +440,290 @@ SELECT
 FROM department dep
 LEFT JOIN student s ON s.dept_id = dep.dept_id
 GROUP BY dep.dept_id, dep.dept_name;
+
+
+-- =============================================================================
+-- SECTION 6: BUSINESS-RULE TRIGGERS (BEFORE triggers that REJECT bad writes)
+-- Section 3's trigger REACTS to a write (sets placement_status after an
+-- offer is inserted). These triggers instead GUARD a write: they fire
+-- BEFORE the row is stored and raise an exception to abort it. That makes
+-- the database itself the last line of defence — the rules hold even for a
+-- DBA running raw SQL, a seed script, or a buggy future endpoint, not just
+-- for requests that go through the Flask app's checks.
+--
+-- Each rule raises its own custom SQLSTATE so the backend can map it to the
+-- right HTTP status without parsing error text (backend/utils/db_errors.py):
+--   PL001  student not eligible for the drive      -> 403
+--   PL002  drive is closed to applications          -> 409
+--   PL003  student has already accepted an offer    -> 409
+--   PL004  drive does not exist (sp_close_drive)    -> 404
+--   PL005  drive is already closed (sp_close_drive) -> 409
+-- =============================================================================
+
+-- Rule: you can only apply to an open drive you are eligible for.
+-- Eligibility reuses fn_check_eligibility() (Section 4) rather than
+-- restating the CGPA/backlog/department rule a second time.
+CREATE OR REPLACE FUNCTION trg_fn_application_guard()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_drive_status drive.status%TYPE;
+BEGIN
+    SELECT status INTO v_drive_status FROM drive WHERE drive_id = NEW.drive_id;
+
+    -- Nonexistent drive: let the drive_id foreign key reject it with its own
+    -- error rather than misreporting it as "not eligible".
+    IF NOT FOUND THEN
+        RETURN NEW;
+    END IF;
+
+    IF v_drive_status IN ('Completed', 'Cancelled') THEN
+        RAISE EXCEPTION 'Drive % is % and no longer accepts applications',
+            NEW.drive_id, v_drive_status
+            USING ERRCODE = 'PL002';
+    END IF;
+
+    IF NOT fn_check_eligibility(NEW.student_id, NEW.drive_id) THEN
+        RAISE EXCEPTION 'Student % is not eligible for drive %',
+            NEW.student_id, NEW.drive_id
+            USING ERRCODE = 'PL001';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_application_before_insert
+BEFORE INSERT ON application
+FOR EACH ROW
+EXECUTE FUNCTION trg_fn_application_guard();
+
+-- Rule: a student can hold at most ONE accepted offer.
+-- This can't be a UNIQUE constraint because offer has no student_id column
+-- (the student is reached through application), so it's enforced here.
+--
+-- The SELECT ... FOR UPDATE on the student row is what makes this rule hold
+-- under concurrency: without it, two transactions accepting two DIFFERENT
+-- offers for the same student at the same instant could each check, each
+-- see "no accepted offer yet", and both commit. Locking the student row
+-- forces the second transaction to wait until the first commits, and then
+-- its check sees the first acceptance. (db/demos/concurrency_demo.py runs
+-- exactly this race.)
+CREATE OR REPLACE FUNCTION trg_fn_offer_single_acceptance()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_student_id student.student_id%TYPE;
+BEGIN
+    IF NEW.status <> 'Accepted' THEN
+        RETURN NEW;
+    END IF;
+
+    SELECT student_id INTO v_student_id
+      FROM application WHERE application_id = NEW.application_id;
+
+    PERFORM 1 FROM student WHERE student_id = v_student_id FOR UPDATE;
+
+    IF EXISTS (
+        SELECT 1
+          FROM offer o
+          JOIN application a ON a.application_id = o.application_id
+         WHERE a.student_id = v_student_id
+           AND o.status = 'Accepted'
+           AND o.offer_id IS DISTINCT FROM NEW.offer_id
+    ) THEN
+        RAISE EXCEPTION 'Student % has already accepted another offer', v_student_id
+            USING ERRCODE = 'PL003';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_offer_before_accept
+BEFORE INSERT OR UPDATE OF status ON offer
+FOR EACH ROW
+EXECUTE FUNCTION trg_fn_offer_single_acceptance();
+
+
+-- =============================================================================
+-- SECTION 7: AUDIT TRIGGER — application status history (OLD vs NEW)
+-- Every change to application.status is recorded with its before and after
+-- value. Unlike offer_history (written explicitly by the backend's
+-- transaction), this log is written by the database itself, so no status
+-- change can skip it — including bulk changes made by sp_close_drive().
+--
+-- The WHEN clause skips UPDATEs that touch the row but don't actually
+-- change the status, so the log never fills with no-op entries.
+-- =============================================================================
+
+CREATE TABLE application_status_history (
+    history_id      INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    application_id  INTEGER NOT NULL REFERENCES application(application_id) ON DELETE CASCADE,
+    old_status      VARCHAR(30) NOT NULL,
+    new_status      VARCHAR(30) NOT NULL,
+    changed_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_status_history_application ON application_status_history(application_id);
+
+CREATE OR REPLACE FUNCTION trg_fn_application_status_audit()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO application_status_history (application_id, old_status, new_status)
+    VALUES (NEW.application_id, OLD.status, NEW.status);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_application_status_audit
+AFTER UPDATE OF status ON application
+FOR EACH ROW
+WHEN (OLD.status IS DISTINCT FROM NEW.status)
+EXECUTE FUNCTION trg_fn_application_status_audit();
+
+
+-- =============================================================================
+-- SECTION 8: STORED PROCEDURE — close a drive
+-- A PROCEDURE, not a FUNCTION, on purpose. The difference to explain:
+--   - A FUNCTION returns a value and is used inside a query
+--     (SELECT fn_check_eligibility(...)). It's for computing something.
+--   - A PROCEDURE is invoked on its own with CALL and performs an action.
+--     It can't appear inside a SELECT, and (unlike a function) it is allowed
+--     to COMMIT/ROLLBACK internally when called outside a transaction block.
+-- Closing a drive is an action with several writes, so it's a procedure.
+--
+-- What it does, atomically: marks the drive Completed and rejects every
+-- applicant still waiting on it (Applied / Shortlisted / Interview_Scheduled).
+-- Selected and Offer_Made applications are left alone. Each rejection is
+-- logged automatically by the Section 7 audit trigger.
+--
+-- p_rejected_count is INOUT because a procedure has no RETURN value — this
+-- is how it hands the number of rejected applications back to the caller:
+--   CALL sp_close_drive(5, NULL);   -- returns one row: p_rejected_count
+-- =============================================================================
+
+CREATE OR REPLACE PROCEDURE sp_close_drive(
+    p_drive_id        INTEGER,
+    INOUT p_rejected_count INTEGER DEFAULT NULL
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_status drive.status%TYPE;
+BEGIN
+    -- Lock the drive row so two admins closing the same drive at once can't
+    -- both pass the "already closed?" check below.
+    SELECT status INTO v_status FROM drive WHERE drive_id = p_drive_id FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Drive % does not exist', p_drive_id USING ERRCODE = 'PL004';
+    END IF;
+
+    IF v_status IN ('Completed', 'Cancelled') THEN
+        RAISE EXCEPTION 'Drive % is already %', p_drive_id, v_status USING ERRCODE = 'PL005';
+    END IF;
+
+    UPDATE application
+       SET status = 'Rejected'
+     WHERE drive_id = p_drive_id
+       AND status IN ('Applied', 'Shortlisted', 'Interview_Scheduled');
+
+    GET DIAGNOSTICS p_rejected_count = ROW_COUNT;
+
+    UPDATE drive SET status = 'Completed' WHERE drive_id = p_drive_id;
+END;
+$$;
+
+
+-- =============================================================================
+-- SECTION 9: WINDOW-FUNCTION VIEWS
+-- A window function computes a value across a set of related rows WITHOUT
+-- collapsing them into one row the way GROUP BY does. Each view below keeps
+-- every row and adds a ranking / running total next to it.
+-- =============================================================================
+
+-- Every non-declined offer, ranked within its department by package.
+-- RANK() gives ties the same rank and then skips (1, 1, 3); "top N per
+-- department" is just WHERE rank_in_dept <= N on top of this view.
+CREATE VIEW dept_offer_ranking_view AS
+SELECT
+    d.dept_id,
+    d.dept_name,
+    s.student_id,
+    s.reg_no,
+    s.name,
+    c.company_name,
+    o.offered_package_lpa,
+    RANK() OVER (
+        PARTITION BY d.dept_id
+        ORDER BY o.offered_package_lpa DESC
+    ) AS rank_in_dept
+FROM offer o
+JOIN application a ON a.application_id = o.application_id
+JOIN student s      ON s.student_id = a.student_id
+JOIN department d   ON d.dept_id = s.dept_id
+JOIN drive dr       ON dr.drive_id = a.drive_id
+JOIN company c      ON c.company_id = dr.company_id
+WHERE o.status <> 'Declined';
+
+-- Offers per month, with a running (cumulative) total and the change from
+-- the previous month. The window functions run AFTER the GROUP BY, over
+-- the monthly rows: SUM(...) OVER (ORDER BY month) is a running total,
+-- LAG(...) reads the previous month's value.
+CREATE VIEW placement_timeline_view AS
+SELECT
+    date_trunc('month', o.offer_date)::DATE AS month,
+    COUNT(*) AS offers_in_month,
+    SUM(COUNT(*)) OVER (ORDER BY date_trunc('month', o.offer_date)) AS cumulative_offers,
+    COUNT(*) - LAG(COUNT(*)) OVER (ORDER BY date_trunc('month', o.offer_date)) AS change_from_prev_month
+FROM offer o
+GROUP BY date_trunc('month', o.offer_date);
+
+-- Where each student's CGPA stands within their own department.
+-- PERCENT_RANK() is 0 for the lowest CGPA and 1 for the highest;
+-- DENSE_RANK() is the plain 1st/2nd/3rd position with no gaps after ties.
+CREATE VIEW student_cgpa_standing_view AS
+SELECT
+    s.student_id,
+    s.dept_id,
+    s.cgpa,
+    DENSE_RANK() OVER (PARTITION BY s.dept_id ORDER BY s.cgpa DESC) AS cgpa_rank_in_dept,
+    COUNT(*)     OVER (PARTITION BY s.dept_id) AS dept_size,
+    ROUND((PERCENT_RANK() OVER (PARTITION BY s.dept_id ORDER BY s.cgpa) * 100)::NUMERIC, 1)
+        AS cgpa_percentile_in_dept
+FROM student s;
+
+
+-- =============================================================================
+-- SECTION 10: MATERIALIZED VIEW — company x department placement matrix
+-- A normal view (Section 5) is just a saved query: it re-runs its joins on
+-- every read, so it's always current. A MATERIALIZED view runs the query
+-- once and STORES the result like a table. Reads are fast, but the data is
+-- only as fresh as the last REFRESH — that staleness is the trade-off.
+--
+-- This one powers the analytics page's company-by-department matrix, which
+-- joins five tables and doesn't need to be up to the second. refreshed_at
+-- is evaluated at refresh time, so the page can show how old the data is.
+--
+-- The UNIQUE index is required for REFRESH MATERIALIZED VIEW CONCURRENTLY,
+-- which rebuilds the data without blocking readers while it runs.
+-- =============================================================================
+
+CREATE MATERIALIZED VIEW mv_company_dept_placements AS
+SELECT
+    c.company_id,
+    c.company_name,
+    d.dept_id,
+    d.dept_name,
+    COUNT(o.offer_id)                    AS offers_count,
+    ROUND(AVG(o.offered_package_lpa), 2) AS avg_package_lpa,
+    CURRENT_TIMESTAMP                    AS refreshed_at
+FROM offer o
+JOIN application a ON a.application_id = o.application_id
+JOIN student s      ON s.student_id = a.student_id
+JOIN department d   ON d.dept_id = s.dept_id
+JOIN drive dr       ON dr.drive_id = a.drive_id
+JOIN company c      ON c.company_id = dr.company_id
+WHERE o.status <> 'Declined'
+GROUP BY c.company_id, c.company_name, d.dept_id, d.dept_name;
+
+CREATE UNIQUE INDEX idx_mv_company_dept ON mv_company_dept_placements(company_id, dept_id);

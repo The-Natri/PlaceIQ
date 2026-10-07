@@ -1,8 +1,10 @@
+import psycopg2
 from flask import Blueprint, g, jsonify
 
 from db import get_cursor
 from services import offer_service
 from utils.auth_middleware import require_auth
+from utils.db_errors import business_rule_response
 
 offers_bp = Blueprint("offers", __name__, url_prefix="/api/offers")
 
@@ -56,4 +58,11 @@ def _run_transition(service_fn, offer_id):
         return jsonify({"error": str(e)}), 403
     except offer_service.OfferNotActionable as e:
         return jsonify({"error": str(e)}), 409
+    except psycopg2.Error as e:
+        # e.g. PL003 from trg_offer_before_accept: the student already
+        # accepted another offer. offer_service has already rolled back.
+        rule_violation = business_rule_response(e)
+        if rule_violation:
+            return rule_violation
+        raise
     return jsonify(result)

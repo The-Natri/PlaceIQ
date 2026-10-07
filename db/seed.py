@@ -171,7 +171,8 @@ def main():
     print("Clearing existing data (TRUNCATE ... RESTART IDENTITY CASCADE)...")
     cur.execute(
         """
-        TRUNCATE TABLE offer_history, offer, interview_round, application,
+        TRUNCATE TABLE application_status_history, offer_history, offer,
+                       interview_round, application,
                        drive_eligible_dept, drive, student_skill, skill,
                        company, student, coordinator, department
         RESTART IDENTITY CASCADE
@@ -329,6 +330,12 @@ def main():
             coordinator_id = coordinator_ids[coord_cycle % len(coordinator_ids)]
             coord_cycle += 1
 
+            # Every drive that will have applicants is inserted as Ongoing
+            # and only flipped to its final status after its applications are
+            # simulated — trg_application_before_insert (schema.sql Section
+            # 6) refuses applications to a drive that's already Completed.
+            insert_status = "Upcoming" if status == "Upcoming" else "Ongoing"
+
             cur.execute(
                 """
                 INSERT INTO drive
@@ -338,7 +345,7 @@ def main():
                 RETURNING drive_id
                 """,
                 (company_id, coordinator_id, role, drive_date, package,
-                 min_cgpa, max_backlogs, drive_type, status),
+                 min_cgpa, max_backlogs, drive_type, insert_status),
             )
             drive_id = cur.fetchone()[0]
 
@@ -373,6 +380,9 @@ def main():
     APPLY_PROB = 0.45
     n_applications = 0
     n_offers = 0
+    # trg_offer_before_accept (schema.sql Section 6) allows one accepted
+    # offer per student, so a student's later offers can't also be Accepted.
+    students_with_accepted_offer = set()
 
     for drive in drives:
         if drive["status"] == "Upcoming":
@@ -444,6 +454,11 @@ def main():
                 offer_status = random.choices(
                     ["Accepted", "Pending", "Declined"], weights=[70, 18, 12]
                 )[0]
+                if offer_status == "Accepted":
+                    if s["id"] in students_with_accepted_offer:
+                        offer_status = "Declined"  # already took another offer
+                    else:
+                        students_with_accepted_offer.add(s["id"])
                 joining_date = offer_date + timedelta(days=60) if offer_status == "Accepted" else None
 
                 cur.execute(
@@ -495,10 +510,21 @@ def main():
                     (application_id,),
                 )
 
+        if drive["status"] == "Completed":
+            cur.execute(
+                "UPDATE drive SET status='Completed' WHERE drive_id=%s", (drive["id"],)
+            )
+
         conn.commit()
 
     print(f"Inserted {n_applications} applications and {n_offers} offers "
           f"(placement_status trigger fired on each offer insert).")
+
+    # A materialized view is filled when it's created (empty, at schema
+    # time) and only changes on REFRESH — so it has to be refreshed now that
+    # the data exists.
+    cur.execute("REFRESH MATERIALIZED VIEW mv_company_dept_placements")
+    conn.commit()
 
     cur.execute("SELECT COUNT(*) FROM student WHERE placement_status = 'Placed'")
     placed_count = cur.fetchone()[0]

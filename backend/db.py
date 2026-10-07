@@ -39,7 +39,7 @@ def close_pool() -> None:
 
 
 @contextlib.contextmanager
-def get_cursor(commit: bool = False):
+def get_cursor(commit: bool = False, autocommit: bool = False):
     """
     Yields a RealDictCursor (rows come back as dict-like objects, so routes
     can do `row["cgpa"]` instead of tracking positional column order) bound
@@ -49,22 +49,33 @@ def get_cursor(commit: bool = False):
     clean exit and explicitly rolled back if an exception propagates — this
     is the same explicit commit/rollback pattern used, at larger scale, by
     the offer-acceptance transaction in services/offer_service.py.
+
+    autocommit=True: every statement commits on its own, with no wrapping
+    transaction. Only for the few statements Postgres refuses to run inside
+    a transaction block (e.g. REFRESH MATERIALIZED VIEW CONCURRENTLY).
     """
     if _pool is None:
         init_pool()
     conn = _pool.getconn()
+    if autocommit:
+        conn.autocommit = True
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         try:
             yield cur
-            if commit:
+            if commit and not autocommit:
                 conn.commit()
         except Exception:
-            conn.rollback()
+            if not autocommit:
+                conn.rollback()
             raise
         finally:
             cur.close()
     finally:
+        # Only an autocommit connection is guaranteed to have no open
+        # transaction here; switching the mode mid-transaction is an error.
+        if autocommit:
+            conn.autocommit = False
         _pool.putconn(conn)
 
 

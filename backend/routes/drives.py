@@ -3,6 +3,7 @@ from flask import Blueprint, g, jsonify, request
 
 from db import get_cursor
 from utils.auth_middleware import require_auth
+from utils.db_errors import business_rule_response
 
 drives_bp = Blueprint("drives", __name__, url_prefix="/api/drives")
 
@@ -94,6 +95,29 @@ def update_drive(drive_id):
         return jsonify({"error": "Invalid dept_id in eligible_dept_ids"}), 400
 
     return jsonify({"drive_id": drive_id, "updated": True})
+
+
+@drives_bp.post("/<int:drive_id>/close")
+@require_auth(roles=["admin"])
+def close_drive(drive_id):
+    """
+    Closes a drive by CALLing the sp_close_drive stored procedure (schema.sql
+    Section 8): it marks the drive Completed and rejects every applicant
+    still pending, in one transaction. The procedure hands back how many
+    applications it rejected through its INOUT parameter, which comes back
+    as a one-row result of the CALL.
+    """
+    try:
+        with get_cursor(commit=True) as cur:
+            cur.execute("CALL sp_close_drive(%s, NULL)", (drive_id,))
+            rejected = cur.fetchone()["p_rejected_count"]
+    except psycopg2.Error as e:
+        rule_violation = business_rule_response(e)
+        if rule_violation:
+            return rule_violation
+        raise
+
+    return jsonify({"drive_id": drive_id, "status": "Completed", "rejected_count": rejected})
 
 
 @drives_bp.get("")

@@ -3,6 +3,7 @@ from flask import Blueprint, g, jsonify, request
 
 from db import get_cursor
 from utils.auth_middleware import require_auth
+from utils.db_errors import business_rule_response
 
 applications_bp = Blueprint("applications", __name__, url_prefix="/api/applications")
 
@@ -19,11 +20,11 @@ INTERVIEW_ROUND_TYPES = {"Aptitude", "Technical", "HR", "Group_Discussion", "Cod
 @require_auth(roles=["student"])
 def apply_to_drive():
     """
-    A student applies to a drive. Eligibility is enforced by calling the
-    same fn_check_eligibility() stored function the dashboard's "eligible
-    drives" list uses (students/routes.py) — re-checked here server-side
-    so a student can't bypass the rule by POSTing a drive_id the UI never
-    showed them.
+    A student applies to a drive. There is deliberately no eligibility check
+    here: trg_application_before_insert (schema.sql Section 6) rejects the
+    INSERT itself if the student isn't eligible or the drive is closed, so
+    the rule can't be bypassed by any client — this route just reports the
+    database's answer.
     """
     body = request.get_json(silent=True) or {}
     drive_id = body.get("drive_id")
@@ -31,12 +32,6 @@ def apply_to_drive():
         return jsonify({"error": "drive_id is required"}), 400
 
     student_id = g.current_user["sub"]
-
-    with get_cursor() as cur:
-        cur.execute("SELECT fn_check_eligibility(%s, %s)", (student_id, drive_id))
-        row = cur.fetchone()
-        if row is None or not row["fn_check_eligibility"]:
-            return jsonify({"error": "You are not eligible for this drive"}), 403
 
     try:
         with get_cursor(commit=True) as cur:
@@ -50,6 +45,11 @@ def apply_to_drive():
         return jsonify({"error": "You have already applied to this drive"}), 409
     except psycopg2.errors.ForeignKeyViolation:
         return jsonify({"error": "Invalid drive_id"}), 400
+    except psycopg2.Error as e:
+        rule_violation = business_rule_response(e)
+        if rule_violation:
+            return rule_violation
+        raise
 
     return jsonify(application), 201
 
@@ -96,6 +96,16 @@ def get_application(application_id):
             (application_id,),
         )
         application["offer"] = cur.fetchone()  # None if no offer yet
+
+        # Written by trg_application_status_audit (schema.sql Section 7),
+        # never by this app — every status change appears here regardless of
+        # which code path or SQL client made it.
+        cur.execute(
+            "SELECT old_status, new_status, changed_at "
+            "FROM application_status_history WHERE application_id = %s ORDER BY changed_at, history_id",
+            (application_id,),
+        )
+        application["status_history"] = cur.fetchall()
 
     return jsonify(application)
 
