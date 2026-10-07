@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { homeRouteFor } from "../auth/homeRoute";
 import "./Login.css";
 
 export function Login() {
@@ -23,7 +24,7 @@ export function Login() {
           ? await loginStudent(email, password)
           : await loginAdmin(email, password);
 
-      navigate(me.role === "student" ? "/student" : "/admin");
+      navigate(homeRouteFor(me.role));
     } catch (err) {
       setError(err.message);
     }

@@ -1,5 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { homeRouteFor } from "../auth/homeRoute";
 import "./Navbar.css";
 
 export function Navbar() {
@@ -14,8 +15,10 @@ export function Navbar() {
     <header className="app-navbar">
       <div className="navbar-inner">
         <div className="navbar-left">
+          {/* "/" (Home) waits for auth to finish loading before redirecting,
+              so the logo can't send a not-yet-loaded user to /admin. */}
           <Link
-            to={user?.role === "student" ? "/student" : "/admin"}
+            to={user ? homeRouteFor(user.role) : "/"}
             className="navbar-brand"
           >
             <div className="brand-mark">PI</div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Plus,
@@ -33,6 +33,13 @@ export function AdminDashboard() {
   const [form, setForm] = useState(initialForm);
   const [message, setMessage] = useState("");
   const [showForm, setShowForm] = useState(false);
+
+  // Form typing re-renders this component on every keystroke; only
+  // recount when the drives list itself changes.
+  const upcomingCount = useMemo(
+    () => drives.filter((d) => d.status === "Upcoming").length,
+    [drives]
+  );
 
   function loadDrives() {
     api.get("/drives").then(setDrives);
@@ -121,7 +128,7 @@ export function AdminDashboard() {
         <AdminStatCard
           icon={<Users size={20} />}
           label="Upcoming"
-          value={drives.filter((d) => d.status === "Upcoming").length}
+          value={upcomingCount}
         />
       </section>
 
@@ -140,9 +147,10 @@ export function AdminDashboard() {
           <form className="admin-form" onSubmit={handleSubmit}>
             <div className="admin-form-grid">
               <div className="admin-field">
-                <label>Company</label>
+                <label htmlFor="drive-company">Company</label>
 
                 <select
+                  id="drive-company"
                   value={form.company_id}
                   onChange={update("company_id")}
                   required
@@ -161,9 +169,10 @@ export function AdminDashboard() {
               </div>
 
               <div className="admin-field">
-                <label>Job Role</label>
+                <label htmlFor="drive-job-role">Job Role</label>
 
                 <input
+                  id="drive-job-role"
                   value={form.job_role}
                   onChange={update("job_role")}
                   placeholder="e.g. Software Engineer"
@@ -172,9 +181,10 @@ export function AdminDashboard() {
               </div>
 
               <div className="admin-field">
-                <label>Drive Date</label>
+                <label htmlFor="drive-date">Drive Date</label>
 
                 <input
+                  id="drive-date"
                   type="date"
                   value={form.drive_date}
                   onChange={update("drive_date")}
@@ -183,9 +193,10 @@ export function AdminDashboard() {
               </div>
 
               <div className="admin-field">
-                <label>Package (LPA)</label>
+                <label htmlFor="drive-package">Package (LPA)</label>
 
                 <input
+                  id="drive-package"
                   type="number"
                   step="0.01"
                   value={form.package_lpa}
@@ -196,9 +207,10 @@ export function AdminDashboard() {
               </div>
 
               <div className="admin-field">
-                <label>Minimum CGPA</label>
+                <label htmlFor="drive-min-cgpa">Minimum CGPA</label>
 
                 <input
+                  id="drive-min-cgpa"
                   type="number"
                   step="0.01"
                   min="0"
@@ -211,9 +223,10 @@ export function AdminDashboard() {
               </div>
 
               <div className="admin-field">
-                <label>Maximum Backlogs</label>
+                <label htmlFor="drive-max-backlogs">Maximum Backlogs</label>
 
                 <input
+                  id="drive-max-backlogs"
                   type="number"
                   min="0"
                   value={form.max_backlogs}
@@ -223,9 +236,10 @@ export function AdminDashboard() {
               </div>
 
               <div className="admin-field">
-                <label>Drive Type</label>
+                <label htmlFor="drive-type">Drive Type</label>
 
                 <select
+                  id="drive-type"
                   value={form.drive_type}
                   onChange={update("drive_type")}
                 >

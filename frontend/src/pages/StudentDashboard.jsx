@@ -234,6 +234,7 @@ export function StudentDashboard() {
                 </div>
 
                 <button
+                  type="button"
                   className="apply-button"
                   onClick={() => applyToDrive(d.drive_id)}
                 >
@@ -345,7 +346,7 @@ function ApplicationRow({ application, onChange }) {
 
   return (
     <div className="application-item">
-      <button className="application-summary" onClick={toggle}>
+      <button type="button" className="application-summary" onClick={toggle}>
         <div className="application-company">
           <div className="company-avatar small">
             {application.company_name?.charAt(0)}
@@ -410,6 +411,7 @@ function ApplicationRow({ application, onChange }) {
               {detail.offer.status === "Pending" && (
                 <div className="offer-buttons">
                   <button
+                    type="button"
                     className="accept-button"
                     onClick={() =>
                       respondToOffer(
@@ -422,6 +424,7 @@ function ApplicationRow({ application, onChange }) {
                   </button>
 
                   <button
+                    type="button"
                     className="decline-button"
                     onClick={() =>
                       respondToOffer(

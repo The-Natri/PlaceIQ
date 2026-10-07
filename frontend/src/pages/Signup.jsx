@@ -89,8 +89,9 @@ export function Signup() {
 
               <div className="signup-grid">
                 <div className="signup-field">
-                  <label>Registration No.</label>
+                  <label htmlFor="signup-reg-no">Registration No.</label>
                   <input
+                    id="signup-reg-no"
                     value={form.reg_no}
                     onChange={update("reg_no")}
                     placeholder="24BLCXXXX"
@@ -99,8 +100,9 @@ export function Signup() {
                 </div>
 
                 <div className="signup-field">
-                  <label>Full Name</label>
+                  <label htmlFor="signup-name">Full Name</label>
                   <input
+                    id="signup-name"
                     value={form.name}
                     onChange={update("name")}
                     placeholder="Your name"
@@ -109,8 +111,9 @@ export function Signup() {
                 </div>
 
                 <div className="signup-field signup-full">
-                  <label>Email address</label>
+                  <label htmlFor="signup-email">Email address</label>
                   <input
+                    id="signup-email"
                     type="email"
                     value={form.email}
                     onChange={update("email")}
@@ -120,10 +123,11 @@ export function Signup() {
                 </div>
 
                 <div className="signup-field signup-full">
-                  <label>Password</label>
+                  <label htmlFor="signup-password">Password</label>
 
                   <div className="signup-password-wrapper">
                     <input
+                      id="signup-password"
                       type={showPassword ? "text" : "password"}
                       value={form.password}
                       onChange={update("password")}
@@ -143,9 +147,10 @@ export function Signup() {
                 </div>
 
                 <div className="signup-field signup-full">
-                  <label>Department</label>
+                  <label htmlFor="signup-dept">Department</label>
 
                   <select
+                    id="signup-dept"
                     value={form.dept_id}
                     onChange={update("dept_id")}
                     required
@@ -161,8 +166,9 @@ export function Signup() {
                 </div>
 
                 <div className="signup-field">
-                  <label>CGPA</label>
+                  <label htmlFor="signup-cgpa">CGPA</label>
                   <input
+                    id="signup-cgpa"
                     type="number"
                     step="0.01"
                     min="0"
@@ -175,8 +181,9 @@ export function Signup() {
                 </div>
 
                 <div className="signup-field">
-                  <label>Backlogs</label>
+                  <label htmlFor="signup-backlogs">Backlogs</label>
                   <input
+                    id="signup-backlogs"
                     type="number"
                     min="0"
                     value={form.backlogs}
@@ -186,8 +193,9 @@ export function Signup() {
                 </div>
 
                 <div className="signup-field">
-                  <label>Batch Year</label>
+                  <label htmlFor="signup-batch-year">Batch Year</label>
                   <input
+                    id="signup-batch-year"
                     type="number"
                     value={form.batch_year}
                     onChange={update("batch_year")}
@@ -196,8 +204,9 @@ export function Signup() {
                 </div>
 
                 <div className="signup-field">
-                  <label>Phone</label>
+                  <label htmlFor="signup-phone">Phone</label>
                   <input
+                    id="signup-phone"
                     type="tel"
                     value={form.phone}
                     onChange={update("phone")}

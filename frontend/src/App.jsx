@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Navbar } from "./components/Navbar";
 import { useAuth } from "./auth/AuthContext";
+import { homeRouteFor } from "./auth/homeRoute";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { Login } from "./pages/Login";
 import { Signup } from "./pages/Signup";
@@ -18,12 +19,7 @@ function Home() {
     return <Navigate to="/login" replace />;
   }
 
-  return (
-    <Navigate
-      to={user.role === "student" ? "/student" : "/admin"}
-      replace
-    />
-  );
+  return <Navigate to={homeRouteFor(user.role)} replace />;
 }
 
 export default function App() {
