@@ -6,12 +6,25 @@
 -- file, since several changes are not just syntax swaps but real semantic
 -- differences (see NO_DATA_FOUND handling in Section 4, for one).
 --
--- COMPATIBILITY TARGET: written to run on Oracle 9i and later (so it works
--- whether the lab machine has 11g, 12c, 19c, or 21c) — this is why auto-
+-- COMPATIBILITY TARGET: Oracle 11g and later (tested on 21c XE). Auto-
 -- increment PKs use the classic SEQUENCE + BEFORE INSERT TRIGGER pattern
 -- instead of `GENERATED ALWAYS AS IDENTITY`, which only exists from Oracle
--- 12c onward. If your Oracle is confirmed 12c+, IDENTITY is a valid, simpler
--- alternative — see docs/oracle-differences.md for that version.
+-- 12c onward. The one feature that needs 11g is the COMPOUND TRIGGER in
+-- Section 6 (Oracle's standard way around the "mutating table" error).
+--
+-- RUN ORDER (see db/oracle_setup.sql for the user):
+--   1. as SYSTEM:  @db/oracle_setup.sql      (creates a clean PLACEIQ schema)
+--   2. as PLACEIQ: @db/schema_oracle.sql     (this file)
+--   3. as PLACEIQ: @db/seed_oracle_demo.sql  (small synthetic dataset)
+--   4. as PLACEIQ: @db/sqlplus_demo.sql      (the live viva demo)
+--
+-- ERROR CODES: Postgres raises custom SQLSTATEs PL001-PL007 from its rule
+-- triggers; Oracle's equivalent is RAISE_APPLICATION_ERROR with the
+-- user-defined range -20000..-20999. Same rule, same last digit:
+--   -20001 not eligible        -20002 drive closed      -20003 second accepted offer
+--   -20004 drive not found     -20005 drive already closed
+--   -20006 offer on an application that isn't Selected
+--   -20007 illegal application status transition
 --
 -- SQL*PLUS MECHANICS: every PL/SQL block below (CREATE ... TRIGGER, CREATE
 -- ... FUNCTION) ends with a `/` on its own line. That is not a typo or an
@@ -407,11 +420,15 @@ CREATE INDEX idx_drive_company ON drive(company_id);
 --     the trigger body — Postgres uses bare `NEW.col`.
 --   - No `LANGUAGE plpgsql` / `$$` delimiters; Oracle just needs `BEGIN ...
 --     END;` followed by a `/` for SQL*Plus.
+--   - Postgres skips offers inserted already Declined with an IF ... RETURN
+--     inside the function; here the same guard is the trigger's WHEN clause,
+--     so the trigger body doesn't even run for them.
 -- =============================================================================
 
 CREATE OR REPLACE TRIGGER trg_offer_after_insert
 AFTER INSERT ON offer
 FOR EACH ROW
+WHEN (NEW.status <> 'Declined')
 BEGIN
     UPDATE student
        SET placement_status = 'Placed'
@@ -601,3 +618,340 @@ SELECT
 FROM department dep
 LEFT JOIN student s ON s.dept_id = dep.dept_id
 GROUP BY dep.dept_id, dep.dept_name;
+
+
+-- =============================================================================
+-- SECTION 6: BUSINESS-RULE TRIGGERS (BEFORE triggers that REJECT bad writes)
+-- Same five rules as db/schema.sql Section 6. Each one aborts the offending
+-- statement with RAISE_APPLICATION_ERROR (codes listed in the file header).
+--
+-- WHAT CHANGED FROM db/schema.sql:
+--   - Postgres: RAISE EXCEPTION ... USING ERRCODE = 'PL00x'.
+--     Oracle:   RAISE_APPLICATION_ERROR(-2000x, 'message').
+--   - Postgres checks "row not found" with IF NOT FOUND; Oracle's SELECT INTO
+--     raises NO_DATA_FOUND instead, so those triggers end with an EXCEPTION
+--     handler (same difference as fn_check_eligibility in Section 4).
+--   - The single-acceptance rule had to become a COMPOUND trigger — see below.
+-- =============================================================================
+
+-- Rule: you can only apply to an open drive you are eligible for (-20002 / -20001).
+-- Reading drive/student/drive_eligible_dept from a trigger on APPLICATION is
+-- fine in Oracle: only reading the trigger's OWN table is restricted.
+CREATE OR REPLACE TRIGGER trg_application_before_insert
+BEFORE INSERT ON application
+FOR EACH ROW
+DECLARE
+    v_drive_status drive.status%TYPE;
+BEGIN
+    SELECT status INTO v_drive_status FROM drive WHERE drive_id = :NEW.drive_id;
+
+    IF v_drive_status IN ('Completed', 'Cancelled') THEN
+        RAISE_APPLICATION_ERROR(-20002,
+            'Drive ' || :NEW.drive_id || ' is ' || v_drive_status || ' and no longer accepts applications');
+    END IF;
+
+    IF fn_check_eligibility(:NEW.student_id, :NEW.drive_id) = 0 THEN
+        RAISE_APPLICATION_ERROR(-20001,
+            'Student ' || :NEW.student_id || ' is not eligible for drive ' || :NEW.drive_id);
+    END IF;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        NULL;  -- nonexistent drive: let the drive_id foreign key report it
+END;
+/
+
+-- Rule: a student can hold at most ONE accepted offer (-20003).
+--
+-- WHY A COMPOUND TRIGGER: the check has to count Accepted rows in OFFER, but
+-- this trigger fires on OFFER. A normal row-level trigger that reads its own
+-- table during an UPDATE gets ORA-04091 ("table is mutating"), because the
+-- table is half-way through changing. (Postgres has no such restriction, so
+-- its version is a plain row trigger.) A compound trigger splits the work:
+--   AFTER EACH ROW  - just remember which accepted rows the statement touched
+--   AFTER STATEMENT - the statement has finished, so the table is consistent
+--                     and can be read; now lock each student and count.
+-- If any student ends up with more than one Accepted offer the error undoes
+-- the whole statement (Oracle rolls back the failed statement, not the
+-- transaction).
+--
+-- The SELECT ... FOR UPDATE on the student row serializes two concurrent
+-- accepts for the same student, exactly as in the Postgres version: the
+-- second waits for the first to commit, then its count sees both.
+CREATE OR REPLACE TRIGGER trg_offer_before_accept
+FOR INSERT OR UPDATE OF status ON offer
+COMPOUND TRIGGER
+
+    TYPE t_app_ids IS TABLE OF offer.application_id%TYPE;
+    g_accepted_app_ids t_app_ids := t_app_ids();
+
+    AFTER EACH ROW IS
+    BEGIN
+        IF :NEW.status = 'Accepted' THEN
+            g_accepted_app_ids.EXTEND;
+            g_accepted_app_ids(g_accepted_app_ids.COUNT) := :NEW.application_id;
+        END IF;
+    END AFTER EACH ROW;
+
+    AFTER STATEMENT IS
+        v_student_id student.student_id%TYPE;
+        v_locked     student.student_id%TYPE;
+        v_accepted   NUMBER;
+    BEGIN
+        FOR i IN 1 .. g_accepted_app_ids.COUNT LOOP
+            SELECT student_id INTO v_student_id
+              FROM application WHERE application_id = g_accepted_app_ids(i);
+
+            SELECT student_id INTO v_locked
+              FROM student WHERE student_id = v_student_id FOR UPDATE;
+
+            SELECT COUNT(*) INTO v_accepted
+              FROM offer o
+              JOIN application a ON a.application_id = o.application_id
+             WHERE a.student_id = v_student_id
+               AND o.status = 'Accepted';
+
+            IF v_accepted > 1 THEN
+                RAISE_APPLICATION_ERROR(-20003,
+                    'Student ' || v_student_id || ' has already accepted another offer');
+            END IF;
+        END LOOP;
+    END AFTER STATEMENT;
+
+END trg_offer_before_accept;
+/
+
+-- Rule: an offer can only be recorded for a Selected application (-20006).
+-- Reads APPLICATION from a trigger on OFFER, so no mutating-table issue.
+CREATE OR REPLACE TRIGGER trg_offer_requires_selected
+BEFORE INSERT ON offer
+FOR EACH ROW
+DECLARE
+    v_app_status application.status%TYPE;
+BEGIN
+    SELECT status INTO v_app_status
+      FROM application WHERE application_id = :NEW.application_id;
+
+    IF v_app_status <> 'Selected' THEN
+        RAISE_APPLICATION_ERROR(-20006,
+            'Application ' || :NEW.application_id || ' is ' || v_app_status ||
+            '; an offer can only be recorded for a Selected application');
+    END IF;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        NULL;  -- nonexistent application: let the foreign key report it
+END;
+/
+
+-- Rule: application status only moves forward through the pipeline (-20007).
+-- Allowed transitions (identical to db/schema.sql):
+--   FROM                 ALLOWED TO
+--   Applied              Shortlisted, Interview_Scheduled, Rejected
+--   Shortlisted          Interview_Scheduled, Selected, Rejected
+--   Interview_Scheduled  Selected, Rejected
+--   Selected             Offer_Made, Rejected
+--   Offer_Made           (final)
+--   Rejected             (final)
+-- Only :OLD and :NEW are read, so no table access at all. PL/SQL (unlike
+-- Oracle SQL before 23c) does have BOOLEAN, so the CASE can return one.
+-- Named trg_app_status_transition here (Postgres: trg_application_status_transition)
+-- because Oracle 11g caps identifiers at 30 characters.
+CREATE OR REPLACE TRIGGER trg_app_status_transition
+BEFORE UPDATE OF status ON application
+FOR EACH ROW
+WHEN (OLD.status <> NEW.status)
+DECLARE
+    v_allowed BOOLEAN;
+BEGIN
+    v_allowed := CASE :OLD.status
+        WHEN 'Applied'             THEN :NEW.status IN ('Shortlisted', 'Interview_Scheduled', 'Rejected')
+        WHEN 'Shortlisted'         THEN :NEW.status IN ('Interview_Scheduled', 'Selected', 'Rejected')
+        WHEN 'Interview_Scheduled' THEN :NEW.status IN ('Selected', 'Rejected')
+        WHEN 'Selected'            THEN :NEW.status IN ('Offer_Made', 'Rejected')
+        ELSE FALSE
+    END;
+
+    IF NOT v_allowed THEN
+        RAISE_APPLICATION_ERROR(-20007,
+            'Application ' || :NEW.application_id || ' cannot move from ' ||
+            :OLD.status || ' to ' || :NEW.status);
+    END IF;
+END;
+/
+
+
+-- =============================================================================
+-- SECTION 7: AUDIT TRIGGER — application status history (OLD vs NEW)
+-- Same design as db/schema.sql Section 7: the database itself logs every
+-- status change, so no code path can skip it. The trigger inserts into a
+-- DIFFERENT table from the one it fires on, so it is a plain row trigger.
+-- =============================================================================
+
+CREATE SEQUENCE application_status_history_seq START WITH 1 INCREMENT BY 1;
+
+CREATE TABLE application_status_history (
+    history_id      NUMBER PRIMARY KEY,
+    application_id  NUMBER NOT NULL REFERENCES application(application_id) ON DELETE CASCADE,
+    old_status      VARCHAR2(30) NOT NULL,
+    new_status      VARCHAR2(30) NOT NULL,
+    changed_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+CREATE INDEX idx_status_history_application ON application_status_history(application_id);
+
+-- (Shorter name than the pattern elsewhere: Oracle 11g caps identifiers at 30 characters.)
+CREATE OR REPLACE TRIGGER trg_app_status_history_bi
+BEFORE INSERT ON application_status_history
+FOR EACH ROW
+WHEN (NEW.history_id IS NULL)
+BEGIN
+    SELECT application_status_history_seq.NEXTVAL INTO :NEW.history_id FROM dual;
+END;
+/
+
+CREATE OR REPLACE TRIGGER trg_application_status_audit
+AFTER UPDATE OF status ON application
+FOR EACH ROW
+WHEN (OLD.status <> NEW.status)
+BEGIN
+    INSERT INTO application_status_history (application_id, old_status, new_status)
+    VALUES (:NEW.application_id, :OLD.status, :NEW.status);
+END;
+/
+
+
+-- =============================================================================
+-- SECTION 8: STORED PROCEDURE — close a drive
+-- Same behaviour as db/schema.sql Section 8: mark the drive Completed and
+-- reject every applicant still pending, then report how many were rejected.
+--
+-- WHAT CHANGED FROM db/schema.sql:
+--   - Postgres returns the count through an INOUT parameter and is called
+--     with CALL sp_close_drive(5, NULL). Oracle uses an OUT parameter and, in
+--     SQL*Plus, a bind variable:
+--         VARIABLE n NUMBER
+--         EXEC sp_close_drive(5, :n)
+--         PRINT n
+--   - Row count: Postgres GET DIAGNOSTICS ... = ROW_COUNT; Oracle SQL%ROWCOUNT.
+--   - "Drive not found": Postgres IF NOT FOUND; Oracle catches NO_DATA_FOUND.
+--   - Neither version COMMITs inside the procedure: the caller decides, so
+--     the close can be rolled back along with anything else in the
+--     transaction (sqlplus_demo.sql relies on this).
+-- =============================================================================
+
+CREATE OR REPLACE PROCEDURE sp_close_drive(
+    p_drive_id       IN  drive.drive_id%TYPE,
+    p_rejected_count OUT NUMBER
+)
+IS
+    v_status drive.status%TYPE;
+BEGIN
+    -- Lock the drive row so two admins closing it at once can't both pass
+    -- the "already closed?" check.
+    SELECT status INTO v_status FROM drive WHERE drive_id = p_drive_id FOR UPDATE;
+
+    IF v_status IN ('Completed', 'Cancelled') THEN
+        RAISE_APPLICATION_ERROR(-20005, 'Drive ' || p_drive_id || ' is already ' || v_status);
+    END IF;
+
+    UPDATE application
+       SET status = 'Rejected'
+     WHERE drive_id = p_drive_id
+       AND status IN ('Applied', 'Shortlisted', 'Interview_Scheduled');
+
+    p_rejected_count := SQL%ROWCOUNT;
+
+    UPDATE drive SET status = 'Completed' WHERE drive_id = p_drive_id;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        RAISE_APPLICATION_ERROR(-20004, 'Drive ' || p_drive_id || ' does not exist');
+END sp_close_drive;
+/
+
+
+-- =============================================================================
+-- SECTION 9: WINDOW-FUNCTION VIEWS
+-- RANK, DENSE_RANK, PERCENT_RANK, LAG and SUM(...) OVER are standard SQL and
+-- work the same in Oracle. The only change is month bucketing:
+--   Postgres  date_trunc('month', offer_date)::DATE
+--   Oracle    TRUNC(offer_date, 'MM')
+-- =============================================================================
+
+CREATE VIEW dept_offer_ranking_view AS
+SELECT
+    d.dept_id,
+    d.dept_name,
+    s.student_id,
+    s.reg_no,
+    s.name,
+    c.company_name,
+    o.offered_package_lpa,
+    RANK() OVER (
+        PARTITION BY d.dept_id
+        ORDER BY o.offered_package_lpa DESC
+    ) AS rank_in_dept
+FROM offer o
+JOIN application a ON a.application_id = o.application_id
+JOIN student s      ON s.student_id = a.student_id
+JOIN department d   ON d.dept_id = s.dept_id
+JOIN drive dr       ON dr.drive_id = a.drive_id
+JOIN company c      ON c.company_id = dr.company_id
+WHERE o.status <> 'Declined';
+
+CREATE VIEW placement_timeline_view AS
+SELECT
+    TRUNC(o.offer_date, 'MM') AS month,
+    COUNT(*) AS offers_in_month,
+    SUM(COUNT(*)) OVER (ORDER BY TRUNC(o.offer_date, 'MM')) AS cumulative_offers,
+    COUNT(*) - LAG(COUNT(*)) OVER (ORDER BY TRUNC(o.offer_date, 'MM')) AS change_from_prev_month
+FROM offer o
+GROUP BY TRUNC(o.offer_date, 'MM');
+
+CREATE VIEW student_cgpa_standing_view AS
+SELECT
+    s.student_id,
+    s.dept_id,
+    s.cgpa,
+    DENSE_RANK() OVER (PARTITION BY s.dept_id ORDER BY s.cgpa DESC) AS cgpa_rank_in_dept,
+    COUNT(*)     OVER (PARTITION BY s.dept_id) AS dept_size,
+    ROUND(PERCENT_RANK() OVER (PARTITION BY s.dept_id ORDER BY s.cgpa) * 100, 1)
+        AS cgpa_percentile_in_dept
+FROM student s;
+
+
+-- =============================================================================
+-- SECTION 10: MATERIALIZED VIEW — company x department placement matrix
+-- Same query as db/schema.sql Section 10.
+--
+-- WHAT CHANGED FROM db/schema.sql:
+--   - Oracle states the refresh policy in the definition: BUILD IMMEDIATE
+--     (fill it now) REFRESH COMPLETE ON DEMAND (rebuild only when asked).
+--   - Refreshing: Postgres REFRESH MATERIALIZED VIEW CONCURRENTLY ...;
+--     Oracle EXEC DBMS_MVIEW.REFRESH('MV_COMPANY_DEPT_PLACEMENTS', 'C');
+--     There is no CONCURRENTLY keyword: Oracle's complete refresh is atomic
+--     by default, so readers keep seeing the old rows until it commits,
+--     which is what CONCURRENTLY buys in Postgres.
+--   - refreshed_at uses SYSTIMESTAMP (Postgres: CURRENT_TIMESTAMP).
+-- =============================================================================
+
+CREATE MATERIALIZED VIEW mv_company_dept_placements
+BUILD IMMEDIATE
+REFRESH COMPLETE ON DEMAND
+AS
+SELECT
+    c.company_id,
+    c.company_name,
+    d.dept_id,
+    d.dept_name,
+    COUNT(o.offer_id)                    AS offers_count,
+    ROUND(AVG(o.offered_package_lpa), 2) AS avg_package_lpa,
+    SYSTIMESTAMP                         AS refreshed_at
+FROM offer o
+JOIN application a ON a.application_id = o.application_id
+JOIN student s      ON s.student_id = a.student_id
+JOIN department d   ON d.dept_id = s.dept_id
+JOIN drive dr       ON dr.drive_id = a.drive_id
+JOIN company c      ON c.company_id = dr.company_id
+WHERE o.status <> 'Declined'
+GROUP BY c.company_id, c.company_name, d.dept_id, d.dept_name;
+
+CREATE UNIQUE INDEX idx_mv_company_dept ON mv_company_dept_placements(company_id, dept_id);
