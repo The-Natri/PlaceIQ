@@ -8,7 +8,7 @@ output only. **Nothing has been pushed.** All commits are local.
 
 | Branch | Commits not on GitHub | Contents |
 |---|---|---|
-| `main` | 7 (`a0b612c` … `e02f11d`) | Database, backend, ML, Oracle port, docs, evidence, report |
+| `main` | everything after `1b22556` (from `a0b612c` to this report) | Database, backend, ML, Oracle port, docs, evidence, report |
 | `frontend-polish` | 1 more on top of `7ec0239` (`e706f18`) | The rebuilt UI (Phase 5) |
 
 `git merge-tree` shows `frontend-polish` merges into `main` **with no
@@ -116,12 +116,12 @@ case needed for `REFRESH MATERIALIZED VIEW CONCURRENTLY`),
 
 ## Git commands (run these yourself)
 
-**1. Push `main`** (7 commits):
+**1. Push `main`** (every commit after `origin/main`):
 
 ```bash
 cd "C:/Users/Naveen M N/college-placement-system"
 git checkout main
-git log --oneline origin/main..main     # check: the 7 commits listed above
+git log --oneline origin/main..main     # check: a0b612c ... the completion-report commit
 git push origin main
 ```
 
