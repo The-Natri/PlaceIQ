@@ -1,5 +1,9 @@
 # PlaceIQ — Project Status Audit
 
+> **22 Oct 2026:** this is the audit from *before* the completion work. Most
+> of the open items below have since been done. See `docs/COMPLETION_REPORT.md`
+> for the current state.
+
 **Audited:** 21 Oct 2026, against the repo at commit `a0b612c` (branch `main`).
 **Method:** everything below was read from the repo or run during this audit. Nothing is taken from memory of earlier sessions. Where something couldn't be verified it says so. No code was changed during the audit.
 
