@@ -15,6 +15,8 @@ BUSINESS_RULE_HTTP_STATUS = {
     "PL003": 409,  # student has already accepted an offer
     "PL004": 404,  # drive does not exist
     "PL005": 409,  # drive is already closed
+    "PL006": 409,  # offer on an application that isn't Selected
+    "PL007": 409,  # illegal application status transition
 }
 
 

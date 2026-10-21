@@ -14,59 +14,80 @@ not just written. `docs/viva-cheatsheet.md` is a one-page pre-viva reference.
 ```
 db/            schema.sql (DDL), seed.py (synthetic dataset generator)
 backend/       Flask API (raw psycopg2, no ORM — see backend/db.py for why)
-frontend/      React (Vite) — minimal/unstyled, teammate restyles this
+frontend/      React (Vite) UI — owned by the frontend teammate
 ml-service/    Flask microservice, trains + serves the placement model
 docs/          er-diagram.md, normalization.md
 docker-compose.yml   Postgres 16 for local dev
 ```
 
-## Quick start (verified working on this machine)
+## Quick start
 
-1. **Start Postgres:**
+**Prerequisites:** Docker Desktop, Python 3.10+, Node.js 18+.
+
+The only difference between platforms is where a virtual environment keeps
+its Python: `.venv-x\Scripts\python` on Windows, `.venv-x/bin/python` on
+macOS/Linux. Every command below calls that Python directly, so nothing needs
+"activating". Run all commands from the repo root unless a step says `cd`.
+
+1. **Start Postgres** (same everywhere):
    ```
    docker compose up -d db
    ```
-2. **Copy env file:**
-   ```
-   cp .env.example .env
-   ```
-3. **Load the schema:**
-   ```
-   docker exec -i placement_db psql -U placement_admin -d placement_db < db/schema.sql
-   ```
-4. **Seed synthetic data** (~180 students, 18 companies, 25 drives, correlated
-   outcomes — see the big comment at the top of `db/seed.py` for the
-   correlation logic):
-   ```
-   python -m venv .venv-db
-   .venv-db/Scripts/pip install -r db/requirements.txt      # Windows
-   .venv-db/Scripts/python db/seed.py
-   ```
-5. **Run the backend:**
-   ```
-   python -m venv .venv-backend
-   .venv-backend/Scripts/pip install -r backend/requirements.txt
-   cd backend
-   ../.venv-backend/Scripts/python app.py
-   ```
-   Then check `http://127.0.0.1:5000/api/health`.
-6. **Run the ML microservice** (trains a model from the live DB on first run):
-   ```
-   python -m venv .venv-ml
-   .venv-ml/Scripts/pip install -r ml-service/requirements.txt
-   cd ml-service
-   ../.venv-ml/Scripts/python train.py     # optional — app.py auto-trains if model/model.joblib is missing
-   ../.venv-ml/Scripts/python app.py
-   ```
-   Then check `http://127.0.0.1:6000/health`. Re-run `train.py` after re-seeding.
-7. **Run the frontend:**
-   ```
-   cd frontend
-   npm install
-   cp .env.example .env
-   npm run dev
-   ```
-   Then open `http://localhost:5173`.
+
+2. **Create your `.env`** and give it a real JWT secret (anyone who knows the
+   secret can forge an admin login, so never reuse the placeholder):
+
+   | Windows (PowerShell) | macOS / Linux |
+   |---|---|
+   | `Copy-Item .env.example .env` | `cp .env.example .env` |
+
+   Generate a secret with
+   `python -c "import secrets; print(secrets.token_urlsafe(64))"` and paste it
+   as the `JWT_SECRET_KEY` value in `.env`.
+
+3. **Load the schema** (PowerShell has no `<` redirection, hence the pipe):
+
+   | Windows (PowerShell) | macOS / Linux |
+   |---|---|
+   | `Get-Content db/schema.sql \| docker exec -i placement_db psql -U placement_admin -d placement_db` | `docker exec -i placement_db psql -U placement_admin -d placement_db < db/schema.sql` |
+
+4. **Seed synthetic data** (180 students, 18 companies, 25 drives, outcomes
+   correlated with CGPA; see the comment at the top of `db/seed.py`). Takes
+   about 2-3 minutes.
+
+   | Windows (PowerShell) | macOS / Linux |
+   |---|---|
+   | `python -m venv .venv-db`<br>`.venv-db\Scripts\python -m pip install -r db/requirements.txt`<br>`.venv-db\Scripts\python db/seed.py` | `python3 -m venv .venv-db`<br>`.venv-db/bin/python -m pip install -r db/requirements.txt`<br>`.venv-db/bin/python db/seed.py` |
+
+5. **Run the backend** (port 5000):
+
+   | Windows (PowerShell) | macOS / Linux |
+   |---|---|
+   | `python -m venv .venv-backend`<br>`.venv-backend\Scripts\python -m pip install -r backend/requirements.txt`<br>`cd backend; ..\.venv-backend\Scripts\python app.py` | `python3 -m venv .venv-backend`<br>`.venv-backend/bin/python -m pip install -r backend/requirements.txt`<br>`cd backend && ../.venv-backend/bin/python app.py` |
+
+   Check `http://127.0.0.1:5000/api/health`. Debug mode is off by default;
+   set `FLASK_DEBUG=1` in `.env` for auto-reload while developing.
+
+6. **Run the ML service** (port 6000; trains a model from the database on first start):
+
+   | Windows (PowerShell) | macOS / Linux |
+   |---|---|
+   | `python -m venv .venv-ml`<br>`.venv-ml\Scripts\python -m pip install -r ml-service/requirements.txt`<br>`cd ml-service; ..\.venv-ml\Scripts\python app.py` | `python3 -m venv .venv-ml`<br>`.venv-ml/bin/python -m pip install -r ml-service/requirements.txt`<br>`cd ml-service && ../.venv-ml/bin/python app.py` |
+
+   Check `http://127.0.0.1:6000/health`. Re-run `train.py` in `ml-service/`
+   after re-seeding so the model matches the data.
+
+7. **Run the frontend** (port 5173). **Run `npm install` again every time you
+   pull**, since teammates may add packages (e.g. `lucide-react`):
+
+   | Windows (PowerShell) | macOS / Linux |
+   |---|---|
+   | `cd frontend`<br>`npm install`<br>`Copy-Item .env.example .env`<br>`npm run dev` | `cd frontend`<br>`npm install`<br>`cp .env.example .env`<br>`npm run dev` |
+
+   Open `http://localhost:5173`. `frontend/.env` holds `VITE_API_URL` (the
+   backend address). If the frontend runs on a different address, add it to
+   `FRONTEND_ORIGINS` in the root `.env`, or the browser will block its API
+   calls (CORS).
 
 ### Seeded login credentials
 - TPO/admin: `tpo@campus.edu` / `Admin@123`

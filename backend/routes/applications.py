@@ -118,13 +118,22 @@ def update_application_status(application_id):
     if new_status not in ADMIN_SETTABLE_STATUSES:
         return jsonify({"error": f"status must be one of {sorted(ADMIN_SETTABLE_STATUSES)}"}), 400
 
-    with get_cursor(commit=True) as cur:
-        cur.execute(
-            "UPDATE application SET status = %s WHERE application_id = %s RETURNING application_id",
-            (new_status, application_id),
-        )
-        if cur.fetchone() is None:
-            return jsonify({"error": "Application not found"}), 404
+    # Which transitions are legal is decided by trg_application_status_transition
+    # (schema.sql Section 6), not here — an illegal one (e.g. Rejected ->
+    # Applied) comes back as PL007 and is reported as a 409.
+    try:
+        with get_cursor(commit=True) as cur:
+            cur.execute(
+                "UPDATE application SET status = %s WHERE application_id = %s RETURNING application_id",
+                (new_status, application_id),
+            )
+            if cur.fetchone() is None:
+                return jsonify({"error": "Application not found"}), 404
+    except psycopg2.Error as e:
+        rule_violation = business_rule_response(e)
+        if rule_violation:
+            return rule_violation
+        raise
 
     return jsonify({"application_id": application_id, "status": new_status})
 
@@ -177,6 +186,18 @@ def record_offer(application_id):
 
     try:
         with get_cursor(commit=True) as cur:
+            # Friendly early answer for the UI. The real guarantee is
+            # trg_offer_requires_selected (schema.sql Section 6), which rejects
+            # the INSERT below even if this check were removed or raced.
+            cur.execute("SELECT status FROM application WHERE application_id = %s", (application_id,))
+            app_row = cur.fetchone()
+            if app_row is None:
+                return jsonify({"error": "Application not found"}), 404
+            if app_row["status"] != "Selected":
+                return jsonify({
+                    "error": f"Application is {app_row['status']}; mark it Selected before recording an offer"
+                }), 409
+
             cur.execute(
                 """
                 INSERT INTO offer (application_id, offered_package_lpa, offer_date)
@@ -200,5 +221,10 @@ def record_offer(application_id):
         return jsonify({"error": "This application already has an offer"}), 409
     except psycopg2.errors.ForeignKeyViolation:
         return jsonify({"error": "Invalid application_id"}), 400
+    except psycopg2.Error as e:
+        rule_violation = business_rule_response(e)
+        if rule_violation:
+            return rule_violation
+        raise
 
     return jsonify(offer), 201

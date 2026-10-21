@@ -42,10 +42,10 @@ def create_app():
     app.config.from_object(Config)
     app.json = ISODateJSONProvider(app)
 
-    # Wide-open CORS for local dev: frontend runs on a different port
-    # (Vite default 5173) than the API (5000). Tighten this to a specific
-    # origin before any real deployment.
-    CORS(app)
+    # The frontend runs on a different origin (Vite, port 5173) than the API
+    # (port 5000), so the browser needs CORS — but only for the configured
+    # frontend origin(s), not for any site on the internet.
+    CORS(app, resources={r"/api/*": {"origins": Config.FRONTEND_ORIGINS}})
 
     db.init_pool()
 

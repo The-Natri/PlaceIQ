@@ -137,6 +137,21 @@ COMPANIES = [
 ]
 
 
+def advance(cur, application_id, *statuses):
+    """
+    Moves an application through each status in order, one UPDATE per step.
+    trg_application_status_transition (schema.sql Section 6) only allows one
+    legal pipeline step at a time, so jumping straight from Applied to
+    Selected would be refused — and stepping through also gives the audit
+    log (application_status_history) a realistic trail.
+    """
+    for status in statuses:
+        cur.execute(
+            "UPDATE application SET status=%s WHERE application_id=%s",
+            (status, application_id),
+        )
+
+
 def build_reg_no(dept_code: str, batch_year: int, seq: int) -> str:
     return f"{dept_code}{batch_year}{seq:03d}"
 
@@ -444,10 +459,7 @@ def main():
                         "VALUES (%s,%s,%s,%s,'Pass')",
                         (application_id, i, rtype, drive["drive_date"] + timedelta(days=i)),
                     )
-                cur.execute(
-                    "UPDATE application SET status='Selected' WHERE application_id=%s",
-                    (application_id,),
-                )
+                advance(cur, application_id, "Shortlisted", "Interview_Scheduled", "Selected")
 
                 offered_package = round(max(drive["package"] + random.uniform(-0.5, 1.5), 1.0), 2)
                 offer_date = drive["drive_date"] + timedelta(days=n_rounds + 2)
@@ -486,10 +498,7 @@ def main():
                          f"Candidate {offer_status.lower()} the offer"),
                     )
 
-                cur.execute(
-                    "UPDATE application SET status='Offer_Made' WHERE application_id=%s",
-                    (application_id,),
-                )
+                advance(cur, application_id, "Offer_Made")
             else:
                 fail_at = random.randint(1, n_rounds)
                 for i, rtype in enumerate(round_types, start=1):
@@ -505,10 +514,13 @@ def main():
                         "VALUES (%s,%s,%s,%s,%s)",
                         (application_id, i, rtype, drive["drive_date"] + timedelta(days=i), result),
                     )
-                cur.execute(
-                    "UPDATE application SET status='Rejected' WHERE application_id=%s",
-                    (application_id,),
-                )
+                # Failing the first (screening) round means rejected straight
+                # from Applied; failing a later round means the student had
+                # been shortlisted and interviewed first.
+                if fail_at == 1:
+                    advance(cur, application_id, "Rejected")
+                else:
+                    advance(cur, application_id, "Shortlisted", "Interview_Scheduled", "Rejected")
 
         if drive["status"] == "Completed":
             cur.execute(

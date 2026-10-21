@@ -57,4 +57,5 @@ def predict():
 
 if __name__ == "__main__":
     get_model()  # fail fast / train immediately on startup rather than on first request
-    app.run(port=6000, debug=True)
+    # Debugger off unless FLASK_DEBUG=1 (same reasoning as backend/config.py).
+    app.run(port=6000, debug=os.environ.get("FLASK_DEBUG", "0") == "1")

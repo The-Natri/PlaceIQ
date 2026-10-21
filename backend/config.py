@@ -22,4 +22,17 @@ class Config:
     JWT_ALGORITHM = "HS256"
     JWT_EXPIRY_HOURS = 12
     ML_SERVICE_URL = os.environ.get("ML_SERVICE_URL", "http://localhost:6000")
-    DEBUG = os.environ.get("FLASK_ENV", "development") == "development"
+
+    # Off unless explicitly switched on: Flask's debugger lets anyone who can
+    # reach the server run arbitrary Python, so it must never be the default.
+    DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1"
+
+    # Browser origins allowed to call the API (CORS). Comma-separated, so the
+    # same code works for the Vite dev server and a deployed frontend.
+    FRONTEND_ORIGINS = [
+        origin.strip()
+        for origin in os.environ.get(
+            "FRONTEND_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+        ).split(",")
+        if origin.strip()
+    ]

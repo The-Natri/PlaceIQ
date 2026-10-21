@@ -458,6 +458,8 @@ GROUP BY dep.dept_id, dep.dept_name;
 --   PL003  student has already accepted an offer    -> 409
 --   PL004  drive does not exist (sp_close_drive)    -> 404
 --   PL005  drive is already closed (sp_close_drive) -> 409
+--   PL006  offer on an application not Selected     -> 409
+--   PL007  illegal application status transition    -> 409
 -- =============================================================================
 
 -- Rule: you can only apply to an open drive you are eligible for.
@@ -542,6 +544,82 @@ CREATE TRIGGER trg_offer_before_accept
 BEFORE INSERT OR UPDATE OF status ON offer
 FOR EACH ROW
 EXECUTE FUNCTION trg_fn_offer_single_acceptance();
+
+-- Rule: an offer can only be recorded for an application that is Selected
+-- (the student cleared every round). Without this, an admin could record an
+-- offer on a Rejected application — and the backend would then flip it to
+-- Offer_Made, rewriting a rejection into a hire.
+CREATE OR REPLACE FUNCTION trg_fn_offer_requires_selected()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_app_status application.status%TYPE;
+BEGIN
+    SELECT status INTO v_app_status
+      FROM application WHERE application_id = NEW.application_id;
+
+    -- Nonexistent application: let the application_id foreign key report it.
+    IF NOT FOUND THEN
+        RETURN NEW;
+    END IF;
+
+    IF v_app_status <> 'Selected' THEN
+        RAISE EXCEPTION 'Application % is %; an offer can only be recorded for a Selected application',
+            NEW.application_id, v_app_status
+            USING ERRCODE = 'PL006';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_offer_requires_selected
+BEFORE INSERT ON offer
+FOR EACH ROW
+EXECUTE FUNCTION trg_fn_offer_requires_selected();
+
+-- Rule: application status can only move forward through the hiring
+-- pipeline. Allowed transitions (anything else raises PL007):
+--
+--   FROM                 ALLOWED TO
+--   Applied              Shortlisted, Interview_Scheduled, Rejected
+--   Shortlisted          Interview_Scheduled, Selected, Rejected
+--   Interview_Scheduled  Selected, Rejected
+--   Selected             Offer_Made, Rejected
+--   Offer_Made           (final — set only when an offer row exists)
+--   Rejected             (final — a rejection can't be undone)
+--
+-- Skipping forward (Applied -> Interview_Scheduled) is allowed because some
+-- drives have no separate shortlisting step; going backwards is never
+-- allowed. The WHEN clause means an UPDATE that doesn't change the status
+-- never reaches the check.
+CREATE OR REPLACE FUNCTION trg_fn_application_status_transition()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_allowed BOOLEAN;
+BEGIN
+    v_allowed := CASE OLD.status
+        WHEN 'Applied'             THEN NEW.status IN ('Shortlisted', 'Interview_Scheduled', 'Rejected')
+        WHEN 'Shortlisted'         THEN NEW.status IN ('Interview_Scheduled', 'Selected', 'Rejected')
+        WHEN 'Interview_Scheduled' THEN NEW.status IN ('Selected', 'Rejected')
+        WHEN 'Selected'            THEN NEW.status IN ('Offer_Made', 'Rejected')
+        ELSE FALSE   -- Offer_Made and Rejected are final
+    END;
+
+    IF NOT v_allowed THEN
+        RAISE EXCEPTION 'Application % cannot move from % to %',
+            NEW.application_id, OLD.status, NEW.status
+            USING ERRCODE = 'PL007';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_application_status_transition
+BEFORE UPDATE OF status ON application
+FOR EACH ROW
+WHEN (OLD.status IS DISTINCT FROM NEW.status)
+EXECUTE FUNCTION trg_fn_application_status_transition();
 
 
 -- =============================================================================
