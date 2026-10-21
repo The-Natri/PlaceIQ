@@ -27,7 +27,7 @@ import psycopg2.extras
 from dotenv import load_dotenv
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -105,14 +105,33 @@ def main():
     pipeline = build_pipeline()
     pipeline.fit(X_train, y_train)
 
+    y_pred = pipeline.predict(X_test)
     train_acc = accuracy_score(y_train, pipeline.predict(X_train))
-    test_acc = accuracy_score(y_test, pipeline.predict(X_test))
+    test_acc = accuracy_score(y_test, y_pred)
     test_auc = roc_auc_score(y_test, pipeline.predict_proba(X_test)[:, 1])
+    (tn, fp), (fn, tp) = confusion_matrix(y_test, y_pred, labels=[0, 1])
 
-    print(f"Training rows: {len(X_train)}, test rows: {len(X_test)}")
+    print(f"Dataset: {len(df)} students ({int(y.sum())} placed, {int(len(y) - y.sum())} not placed)")
+    print(f"Training rows: {len(X_train)}, test rows: {len(X_test)} "
+          f"({int(y_test.sum())} placed, {int(len(y_test) - y_test.sum())} not placed)")
     print(f"Train accuracy: {train_acc:.3f}")
     print(f"Test accuracy:  {test_acc:.3f}")
     print(f"Test ROC-AUC:   {test_auc:.3f}")
+    print("Confusion matrix on the test set (rows = actual, columns = predicted):")
+    print("                    pred Not Placed   pred Placed")
+    print(f"  actual Not Placed {tn:>15}   {fp:>11}")
+    print(f"  actual Placed     {fn:>15}   {tp:>11}")
+
+    # Coefficients are on STANDARDIZED features (one standard deviation =
+    # one unit), so their sizes are comparable: the biggest absolute value is
+    # the feature that moves the prediction most. Department coefficients are
+    # relative to the other departments (one-hot encoding).
+    clf = pipeline.named_steps["clf"]
+    names = pipeline.named_steps["preprocess"].get_feature_names_out()
+    print("Logistic-regression coefficients (log-odds per standard deviation):")
+    for name, coef in sorted(zip(names, clf.coef_[0]), key=lambda nc: -abs(nc[1])):
+        print(f"  {name.split('__', 1)[1]:<14} {coef:+.3f}")
+    print(f"  {'(intercept)':<14} {clf.intercept_[0]:+.3f}")
 
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
     joblib.dump(pipeline, MODEL_PATH)

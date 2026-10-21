@@ -1,0 +1,21 @@
+Dataset: 180 students (95 placed, 85 not placed)
+Training rows: 144, test rows: 36 (19 placed, 17 not placed)
+Train accuracy: 0.875
+Test accuracy:  0.750
+Test ROC-AUC:   0.774
+Confusion matrix on the test set (rows = actual, columns = predicted):
+                    pred Not Placed   pred Placed
+  actual Not Placed              12             5
+  actual Placed                   4            15
+Logistic-regression coefficients (log-odds per standard deviation):
+  cgpa           +1.496
+  backlogs       -1.136
+  skill_count    +0.819
+  dept_id_3      +0.782
+  dept_id_1      -0.637
+  dept_id_4      +0.531
+  dept_id_5      -0.314
+  dept_id_6      -0.180
+  dept_id_2      -0.178
+  (intercept)    +0.175
+Model saved to C:\Users\Naveen M N\college-placement-system\ml-service\model\model.joblib

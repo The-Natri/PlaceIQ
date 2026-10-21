@@ -1,0 +1,20 @@
+$ curl -s http://127.0.0.1:6000/health
+{"model_loaded":true,"status":"ok"}
+
+
+$ curl -s -X POST http://127.0.0.1:6000/predict -H "Content-Type: application/json" -d '{"cgpa": 8.9, "backlogs": 0, "dept_id": 1, "skill_count": 7}'
+{"placement_probability":0.992}
+
+
+$ curl -s -X POST http://127.0.0.1:6000/predict -H "Content-Type: application/json" -d '{"cgpa": 6.1, "backlogs": 3, "dept_id": 1, "skill_count": 2}'
+{"placement_probability":0.0027}
+
+
+$ curl -s -X POST http://127.0.0.1:6000/predict -H "Content-Type: application/json" -d '{"cgpa": 8.9}'   # missing fields
+{"error":"Missing required fields: ['backlogs', 'dept_id', 'skill_count']"}
+
+(HTTP 400)
+
+# Backend endpoint (student logs in, asks for own probability):
+GET /api/students/15/placement-probability  (student cgpa=9.15, backlogs=0, skills=3, dept=CSE, actual status=Not Placed)
+-> HTTP 200 {'placement_probability': 0.9583}

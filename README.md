@@ -94,29 +94,46 @@ macOS/Linux. Every command below calls that Python directly, so nothing needs
 - Coordinator/admin: `coordinator@campus.edu` / `Admin@123`
 - All seeded students: password `Student@123` (see `student` table for emails/reg_nos)
 
-## Status
+## What's in it
 
-- [x] Schema (DDL, constraints, indexes, trigger, functions, views) — `db/schema.sql`
-- [x] Synthetic dataset generator — `db/seed.py`
-- [x] Backend read CRUD (departments/students/companies/drives) — `backend/`
-- [x] Auth (JWT, bcrypt, student/admin roles) — `backend/routes/auth.py`
-- [x] Admin drive management + shortlisting + offers — `backend/routes/drives.py`, `applications.py`
-- [x] Explicit multi-table offer-acceptance transaction — `backend/services/offer_service.py`
-- [x] Analytics endpoints (views + package/branch + cgpa-vs-outcome) — `backend/routes/analytics.py`
-- [x] ML microservice (logistic regression, trained off the live DB) — `ml-service/`
-- [x] Frontend (React/Vite, minimal, unstyled) — `frontend/` — full flow verified in a real browser: student signup/login/apply/accept-offer, admin login/create-drive/shortlist/record-offer, analytics page
+- **Database** (`db/schema.sql`): 13 tables with PK/FK/UNIQUE/CHECK constraints,
+  5 purpose-built indexes, 6 triggers (placement status, audit log, and four
+  that make the database refuse invalid writes), stored functions, the
+  `sp_close_drive` procedure, analytics views, window-function views and a
+  materialized view. An Oracle/SQL*Plus port is in `db/schema_oracle.sql`.
+- **Synthetic data** (`db/seed.py`): 180 students, 18 companies, 25 drives,
+  517 applications, 177 offers, with placement outcomes correlated with CGPA.
+- **Backend** (`backend/`): Flask with raw psycopg2 (no ORM), JWT auth with
+  student and admin roles, and an explicit multi-statement offer transaction
+  (`backend/services/offer_service.py`).
+- **ML service** (`ml-service/`): placement-probability model (below).
+- **Frontend** (`frontend/`): React + Vite.
+- **Tests** (`tests/`): an end-to-end smoke test that runs against a
+  throwaway database. Run it with `bash tests/run_smoke_test.sh`
+  (needs Postgres and the ML service running).
 
-## Everything verified end-to-end, not just written
+## ML model: what the numbers mean
 
-Every piece above was actually run against a live Postgres container, not
-just authored: schema applied cleanly, seed script produces a real
-CGPA-placement correlation (100% placed at CGPA 8.5+, 6.8% below 6.5), the
-placement_status trigger was confirmed firing through the real API path, the
-offer accept/decline transaction was confirmed both committing correctly and
-correctly reverting `placement_status` when a student's only offer is
-declined, the ML model trained to test ROC-AUC 0.878, and the full frontend
-flow (student dashboard incl. ML widget, admin drive management, analytics)
-was driven headlessly in a real browser with screenshots checked by eye.
+A logistic-regression model predicts each student's chance of being placed
+from CGPA, backlogs, department and number of skills. Measured on the current
+seed data (`ml-service/train.py` prints these; raw output in
+`docs/evidence/raw/ml-training-output.txt`):
+
+| Metric | Value |
+|---|---|
+| Test ROC-AUC | 0.774 |
+| Test accuracy | 0.750 (27 of 36 correct) |
+| Test set | 36 students (19 placed, 17 not placed); 144 used for training |
+| Strongest features | CGPA (+1.50), backlogs (−1.14), skill count (+0.82), in log-odds per standard deviation |
+
+Two caveats to state whenever these numbers are quoted:
+
+- **The test set is small.** With 36 students, one prediction changing moves
+  accuracy by about 3 points, so treat the score as a rough indication.
+- **The data is synthetic.** `db/seed.py` builds the CGPA/backlog/skill
+  relationship in on purpose, so the model is recovering a pattern we
+  designed. It shows the pipeline works end to end, not that it would
+  predict real placements.
 
 ## API summary (once auth is added, everything below api/departments requires `Authorization: Bearer <token>`)
 

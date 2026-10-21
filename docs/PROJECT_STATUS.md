@@ -179,7 +179,7 @@ Auth column: *public* = no token; *any* = any valid JWT; *self/admin* = a studen
 | Label | `placement_status = 'Placed'` |
 | Training | `python ml-service/train.py` reads straight from Postgres, 80/20 stratified split (`random_state=42`), saves `ml-service/model/model.joblib`. `app.py` auto-trains if the file is missing. |
 | Backend call | `GET /api/students/:id/placement-probability` fetches the student's features → `POST {ML_SERVICE_URL}/predict` (5 s timeout) → returns the probability; 503 if the ML service is unreachable. |
-| **Current ROC-AUC** | **0.774** for a fresh retrain on today's data (measured, not saved). The saved model scores 0.820, but it was trained on 12 Sep, before the seed changed, and probably saw some of today's test rows, so 0.820 is optimistic. The test set is only 36 students, so expect ±0.05 swings. The README's "0.878" is **out of date**. |
+| **Current ROC-AUC** | **0.774** for a fresh retrain on today's data (measured, not saved). The saved model scores 0.820, but it was trained on 12 Sep, before the seed changed, and probably saw some of today's test rows, so 0.820 is optimistic. The test set is only 36 students, so expect ±0.05 swings. The README's "0.878" is **out of date**. *Update (Phase 2, same day): the model was retrained and saved on freshly reseeded data, giving test ROC-AUC 0.774 and accuracy 0.750 on 36 test students. The 0.820 and 0.878 figures no longer apply anywhere; see the README's "ML model" section.* |
 | Coefficients (fresh model) | cgpa +1.50, backlogs −1.14, skill_count +0.82 (standardized), so CGPA dominates, as designed. |
 
 ### 1.5 Frontend
@@ -225,7 +225,7 @@ Auth column: *public* = no token; *any* = any valid JWT; *self/admin* = a studen
 
 | Doc | Exists | Complete? |
 |---|---|---|
-| `README.md` | ✅ | ❌ Out of date: calls the frontend "minimal/unstyled", quotes ROC-AUC 0.878, and its status list and API summary don't include any of the newest features (procedure, rules, audit, window functions, materialized view). |
+| `README.md` | ✅ | ❌ Out of date: calls the frontend "minimal/unstyled", quotes ROC-AUC 0.878, and its status list and API summary don't include any of the newest features (procedure, rules, audit, window functions, materialized view). *(Setup, feature list and ML figures fixed in Phases 1–2.)* |
 | `docs/er-diagram.md` | ✅ | ❌ No `application_status_history` table. Mermaid only, no image. |
 | `docs/normalization.md` | ✅ | ❌ Doesn't cover `application_status_history`. |
 | `docs/oracle-differences.md` | ✅ | ⚠️ Accurate for what the Oracle port contains, but the port itself is missing Sections 6–10 (§1.2). |
