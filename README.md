@@ -135,13 +135,10 @@ Two caveats to state whenever these numbers are quoted:
   designed. It shows the pipeline works end to end, not that it would
   predict real placements.
 
-## API summary (once auth is added, everything below api/departments requires `Authorization: Bearer <token>`)
+## API
 
-- `POST /api/auth/student/signup`, `/student/login`, `/admin/login`, `GET /me`
-- `GET /api/departments`
-- `GET /api/students` (admin), `GET /api/students/:id` (self/admin), `GET /api/students/:id/eligible-drives`, `GET /api/students/:id/applications`
-- `GET /api/companies`, `GET /api/companies/:id`
-- `GET/POST /api/drives`, `PUT /api/drives/:id` (admin write), `GET /api/drives/:id/applicants` (admin)
-- `POST /api/applications` (student applies), `GET /api/applications/:id`, `PUT /api/applications/:id/status` (admin), `POST /api/applications/:id/interview-rounds` (admin), `POST /api/applications/:id/offer` (admin — fires the placement_status trigger)
-- `GET /api/offers/:id`, `POST /api/offers/:id/accept`, `POST /api/offers/:id/decline` (the explicit transaction demo)
-- `GET /api/analytics/overview`, `/department-stats`, `/company-stats?top=N`, `/package-by-branch`, `/cgpa-vs-outcome` (all admin-only)
+All 36 endpoints are documented in [`docs/API.md`](docs/API.md): role,
+request body, response fields, error codes and a curl example for each.
+The doc is checked against the running backend by
+`bash tests/run_smoke_test.sh tests/api_contract_check.py`, which fails if
+they ever disagree.

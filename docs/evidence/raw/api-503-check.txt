@@ -1,0 +1,2 @@
+Backend started with ML_SERVICE_URL=http://127.0.0.1:6999 (nothing listening there).
+GET /api/students/15/placement-probability -> HTTP 503 {'error': 'ML service is currently unavailable'}

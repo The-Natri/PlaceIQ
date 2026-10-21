@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Runs tests/smoke_test.py against a THROWAWAY copy of the database, so the
-# live placement_db is never modified:
+# Runs a test script (default: tests/smoke_test.py) against a THROWAWAY copy
+# of the database, so the live placement_db is never modified:
 #   1. creates placement_smoke, loads db/schema.sql, runs db/seed.py into it
 #   2. starts a second backend on port 5001 pointed at placement_smoke
-#   3. runs the smoke test
+#   3. runs the test script (any extra arguments are passed to it)
 #   4. stops that backend and drops placement_smoke
+#
+# Usage:  bash tests/run_smoke_test.sh                              # smoke test
+#         bash tests/run_smoke_test.sh tests/api_contract_check.py  # API doc check
 #
 # Needs: Postgres running (docker compose up -d db), the ML service on :6000,
 # and the .venv-db / .venv-backend virtualenvs from the README.
@@ -49,5 +52,12 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-echo "== Running smoke test =="
-PYTHONIOENCODING=utf-8 API_URL="http://127.0.0.1:${PORT}/api" DATABASE_URL="$SMOKE_URL" "$BACKEND_PY" "$ROOT/tests/smoke_test.py"
+TEST_SCRIPT="${1:-tests/smoke_test.py}"
+[ $# -gt 0 ] && shift
+case "$TEST_SCRIPT" in
+  /*|[A-Za-z]:*) ;;                       # already absolute
+  *) TEST_SCRIPT="$ROOT/$TEST_SCRIPT" ;;  # relative to the repo root
+esac
+echo "== Running $(basename "$TEST_SCRIPT") =="
+PYTHONIOENCODING=utf-8 API_URL="http://127.0.0.1:${PORT}/api" DATABASE_URL="$SMOKE_URL" \
+  "$BACKEND_PY" "$TEST_SCRIPT" "$@"

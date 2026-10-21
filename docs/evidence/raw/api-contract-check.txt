@@ -1,0 +1,169 @@
+== Building placement_smoke (schema + seed) ==
+NOTICE:  database "placement_smoke" does not exist, skipping
+Students marked 'Placed' by the trigger: 95 / 180
+Seeding complete.
+== Starting backend on :5001 against placement_smoke ==
+== Running api_contract_check.py ==
+PASS | Doc covers exactly the backend's routes            | 36 documented, 36 in backend
+PASS | GET /api/health -> 200                             | got 200
+PASS | GET /api/health fields                             | match
+PASS | POST /api/auth/student/signup -> 201               | got 201
+PASS | POST /api/auth/student/signup fields               | match
+PASS | POST /api/auth/student/signup -> 400               | got 400: {"error":"Missing required fields: reg_no, email, password, dept_id, cgpa, backlogs, batch
+PASS | POST /api/auth/student/signup -> 409               | got 409: {"error":"A student with this reg_no or email already exists"}
+PASS | POST /api/auth/student/login -> 200                | got 200
+PASS | POST /api/auth/student/login fields                | match
+PASS | POST /api/auth/student/login -> 400                | got 400: {"error":"email and password are required"}
+PASS | POST /api/auth/student/login -> 401                | got 401: {"error":"Invalid email or password"}
+PASS | POST /api/auth/admin/login -> 200                  | got 200
+PASS | POST /api/auth/admin/login fields                  | match
+PASS | POST /api/auth/admin/login -> 400                  | got 400: {"error":"email and password are required"}
+PASS | POST /api/auth/admin/login -> 401                  | got 401: {"error":"Invalid email or password"}
+PASS | GET /api/auth/me -> 200                            | got 200
+PASS | GET /api/auth/me fields                            | match
+PASS | GET /api/auth/me -> 401                            | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/departments -> 200                        | got 200
+PASS | GET /api/departments fields                        | match
+PASS | GET /api/companies -> 200                          | got 200
+PASS | GET /api/companies fields                          | match
+PASS | GET /api/companies -> 401                          | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/companies/:id -> 200                      | got 200
+PASS | GET /api/companies/:id fields                      | match
+PASS | GET /api/companies/:id -> 401                      | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/companies/:id -> 404                      | got 404: {"error":"Company not found"}
+PASS | GET /api/students -> 200                           | got 200
+PASS | GET /api/students fields                           | match
+PASS | GET /api/students -> 401                           | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/students -> 403                           | got 403: {"error":"Forbidden: insufficient role"}
+PASS | GET /api/students/:id -> 200                       | got 200
+PASS | GET /api/students/:id fields                       | match
+PASS | GET /api/students/:id -> 401                       | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/students/:id -> 403                       | got 403: {"error":"Forbidden: you may only access your own record"}
+PASS | GET /api/students/:id -> 404                       | got 404: {"error":"Student not found"}
+PASS | GET /api/students/:id/eligible-drives -> 200       | got 200
+PASS | GET /api/students/:id/eligible-drives fields       | match
+PASS | GET /api/students/:id/eligible-drives -> 401       | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/students/:id/eligible-drives -> 403       | got 403: {"error":"Forbidden: you may only access your own record"}
+PASS | GET /api/students/:id/applications -> 200          | got 200
+PASS | GET /api/students/:id/applications fields          | match
+PASS | GET /api/students/:id/applications -> 401          | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/students/:id/applications -> 403          | got 403: {"error":"Forbidden: you may only access your own record"}
+PASS | GET /api/students/:id/placement-probability -> 200 | got 200
+PASS | GET /api/students/:id/placement-probability fields | match
+PASS | GET /api/students/:id/placement-probability -> 401 | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/students/:id/placement-probability -> 403 | got 403: {"error":"Forbidden: you may only access your own record"}
+PASS | GET /api/students/:id/placement-probability -> 404 | got 404: {"error":"Student not found"}
+PASS | GET /api/drives -> 200                             | got 200
+PASS | GET /api/drives fields                             | match
+PASS | GET /api/drives -> 401                             | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/drives/:id -> 200                         | got 200
+PASS | GET /api/drives/:id fields                         | match
+PASS | GET /api/drives/:id -> 401                         | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/drives/:id -> 404                         | got 404: {"error":"Drive not found"}
+PASS | POST /api/drives -> 201                            | got 201
+PASS | POST /api/drives fields                            | match
+PASS | POST /api/drives -> 400                            | got 400: {"error":"Missing required fields: company_id, drive_date, package_lpa, min_cgpa, max_back
+PASS | POST /api/drives -> 401                            | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | POST /api/drives -> 403                            | got 403: {"error":"Forbidden: insufficient role"}
+PASS | PUT /api/drives/:id -> 200                         | got 200
+PASS | PUT /api/drives/:id fields                         | match
+PASS | PUT /api/drives/:id -> 400                         | got 400: {"error":"No editable fields provided"}
+PASS | PUT /api/drives/:id -> 401                         | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | PUT /api/drives/:id -> 403                         | got 403: {"error":"Forbidden: insufficient role"}
+PASS | PUT /api/drives/:id -> 404                         | got 404: {"error":"Drive not found"}
+PASS | GET /api/drives/:id/applicants -> 200              | got 200
+PASS | GET /api/drives/:id/applicants fields              | match
+PASS | GET /api/drives/:id/applicants -> 401              | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/drives/:id/applicants -> 403              | got 403: {"error":"Forbidden: insufficient role"}
+PASS | POST /api/applications -> 201                      | got 201
+PASS | POST /api/applications fields                      | match
+PASS | POST /api/applications -> 400                      | got 400: {"error":"drive_id is required"}
+PASS | POST /api/applications -> 401                      | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | POST /api/applications -> 403                      | got 403: {"error":"Student 10 is not eligible for drive 1"}
+PASS | POST /api/applications -> 409                      | got 409: {"error":"Drive 2 is Completed and no longer accepts applications"}
+PASS | GET /api/applications/:id -> 200                   | got 200
+PASS | GET /api/applications/:id fields                   | match
+PASS | GET /api/applications/:id -> 401                   | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/applications/:id -> 403                   | got 403: {"error":"Forbidden"}
+PASS | GET /api/applications/:id -> 404                   | got 404: {"error":"Application not found"}
+PASS | PUT /api/applications/:id/status -> 200            | got 200
+PASS | PUT /api/applications/:id/status fields            | match
+PASS | PUT /api/applications/:id/status -> 400            | got 400: {"error":"status must be one of ['Applied', 'Interview_Scheduled', 'Rejected', 'Selected',
+PASS | PUT /api/applications/:id/status -> 401            | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | PUT /api/applications/:id/status -> 403            | got 403: {"error":"Forbidden: insufficient role"}
+PASS | PUT /api/applications/:id/status -> 404            | got 404: {"error":"Application not found"}
+PASS | PUT /api/applications/:id/status -> 409            | got 409: {"error":"Application 523 cannot move from Shortlisted to Applied"}
+PASS | POST /api/applications/:id/interview-rounds -> 201 | got 201
+PASS | POST /api/applications/:id/interview-rounds fields | match
+PASS | POST /api/applications/:id/interview-rounds -> 400 | got 400: {"error":"round_number is required and round_type must be one of ['Aptitude', 'Coding_Test
+PASS | POST /api/applications/:id/interview-rounds -> 401 | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | POST /api/applications/:id/interview-rounds -> 403 | got 403: {"error":"Forbidden: insufficient role"}
+PASS | POST /api/applications/:id/interview-rounds -> 409 | got 409: {"error":"This round_number already exists for this application"}
+PASS | POST /api/applications/:id/offer -> 201            | got 201
+PASS | POST /api/applications/:id/offer fields            | match
+PASS | POST /api/applications/:id/offer -> 400            | got 400: {"error":"offered_package_lpa is required"}
+PASS | POST /api/applications/:id/offer -> 401            | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | POST /api/applications/:id/offer -> 403            | got 403: {"error":"Forbidden: insufficient role"}
+PASS | POST /api/applications/:id/offer -> 404            | got 404: {"error":"Application not found"}
+PASS | POST /api/applications/:id/offer -> 409            | got 409: {"error":"Application is Shortlisted; mark it Selected before recording an offer"}
+PASS | GET /api/offers/:id -> 200                         | got 200
+PASS | GET /api/offers/:id fields                         | match
+PASS | GET /api/offers/:id -> 401                         | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/offers/:id -> 403                         | got 403: {"error":"Forbidden"}
+PASS | GET /api/offers/:id -> 404                         | got 404: {"error":"Offer not found"}
+PASS | GET /api/analytics/overview -> 200                 | got 200
+PASS | GET /api/analytics/overview fields                 | match
+PASS | GET /api/analytics/overview -> 401                 | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/analytics/overview -> 403                 | got 403: {"error":"Forbidden: insufficient role"}
+PASS | GET /api/analytics/department-stats -> 200         | got 200
+PASS | GET /api/analytics/department-stats fields         | match
+PASS | GET /api/analytics/department-stats -> 401         | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/analytics/department-stats -> 403         | got 403: {"error":"Forbidden: insufficient role"}
+PASS | GET /api/analytics/company-stats -> 200            | got 200
+PASS | GET /api/analytics/company-stats fields            | match
+PASS | GET /api/analytics/company-stats -> 401            | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/analytics/company-stats -> 403            | got 403: {"error":"Forbidden: insufficient role"}
+PASS | GET /api/analytics/package-by-branch -> 200        | got 200
+PASS | GET /api/analytics/package-by-branch fields        | match
+PASS | GET /api/analytics/package-by-branch -> 401        | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/analytics/package-by-branch -> 403        | got 403: {"error":"Forbidden: insufficient role"}
+PASS | GET /api/analytics/cgpa-vs-outcome -> 200          | got 200
+PASS | GET /api/analytics/cgpa-vs-outcome fields          | match
+PASS | GET /api/analytics/cgpa-vs-outcome -> 401          | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/analytics/cgpa-vs-outcome -> 403          | got 403: {"error":"Forbidden: insufficient role"}
+PASS | GET /api/analytics/top-offers-per-dept -> 200      | got 200
+PASS | GET /api/analytics/top-offers-per-dept fields      | match
+PASS | GET /api/analytics/top-offers-per-dept -> 401      | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/analytics/top-offers-per-dept -> 403      | got 403: {"error":"Forbidden: insufficient role"}
+PASS | GET /api/analytics/placement-timeline -> 200       | got 200
+PASS | GET /api/analytics/placement-timeline fields       | match
+PASS | GET /api/analytics/placement-timeline -> 401       | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/analytics/placement-timeline -> 403       | got 403: {"error":"Forbidden: insufficient role"}
+PASS | GET /api/analytics/company-dept-matrix -> 200      | got 200
+PASS | GET /api/analytics/company-dept-matrix fields      | match
+PASS | GET /api/analytics/company-dept-matrix -> 401      | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | GET /api/analytics/company-dept-matrix -> 403      | got 403: {"error":"Forbidden: insufficient role"}
+PASS | POST /api/analytics/refresh-matrix -> 200          | got 200
+PASS | POST /api/analytics/refresh-matrix fields          | match
+PASS | POST /api/analytics/refresh-matrix -> 401          | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | POST /api/analytics/refresh-matrix -> 403          | got 403: {"error":"Forbidden: insufficient role"}
+PASS | POST /api/offers/:id/accept -> 200                 | got 200
+PASS | POST /api/offers/:id/accept fields                 | match
+PASS | POST /api/offers/:id/accept -> 401                 | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | POST /api/offers/:id/accept -> 403                 | got 403: {"error":"This offer does not belong to the requesting student"}
+PASS | POST /api/offers/:id/accept -> 404                 | got 404: {"error":"Offer 999999 does not exist"}
+PASS | POST /api/offers/:id/accept -> 409                 | got 409: {"error":"Offer 178 is not Pending (already actioned or invalid)"}
+PASS | POST /api/offers/:id/decline -> 200                | got 200
+PASS | POST /api/offers/:id/decline fields                | match
+PASS | POST /api/offers/:id/decline -> 401                | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | POST /api/offers/:id/decline -> 403                | got 403: {"error":"This offer does not belong to the requesting student"}
+PASS | POST /api/offers/:id/decline -> 404                | got 404: {"error":"Offer 999999 does not exist"}
+PASS | POST /api/offers/:id/decline -> 409                | got 409: {"error":"Offer 179 is not Pending (already actioned or invalid)"}
+PASS | POST /api/drives/:id/close -> 200                  | got 200
+PASS | POST /api/drives/:id/close fields                  | match
+PASS | POST /api/drives/:id/close -> 401                  | got 401: {"error":"Missing or malformed Authorization header"}
+PASS | POST /api/drives/:id/close -> 403                  | got 403: {"error":"Forbidden: insufficient role"}
+PASS | POST /api/drives/:id/close -> 404                  | got 404: {"error":"Drive 999999 does not exist"}
+PASS | POST /api/drives/:id/close -> 409                  | got 409: {"error":"Drive 2 is already Completed"}
+
+TOTAL: 161/161 passed  (36 endpoints documented)
