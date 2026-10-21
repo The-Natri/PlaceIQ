@@ -1,0 +1,54 @@
+PASS | Login page renders
+PASS | Login form validation shows field errors
+PASS | Student logs in -> dashboard overview
+PASS | Placement probability widget shows a % and explanation
+PASS | Eligible Drives tab lists drives with Apply buttons
+PASS | Student applies to the first drive
+PASS | My Applications tab shows the tracker; detail opens with history
+PASS | Student logs out
+PASS | Admin logs in -> drives list
+PASS | New drive form validates, then creates a drive
+PASS | Edit drive updates the package
+PASS | Close drive runs the procedure and reports rejections
+PASS | Drive detail lists applicants; shortlist the student
+PASS | Record an interview round
+PASS | Select the student, then record an offer
+PASS | View application: offer detail + status history
+PASS | Students page: filters and profile with CGPA percentile
+PASS | Analytics overview: bars + CGPA scatter with tooltip
+PASS | Analytics tab: Recruiters & packages
+PASS | Analytics tab: Top offers
+PASS | Analytics tab: Timeline
+PASS | Analytics tab: Company × department
+PASS | Student sees the offer and accepts it
+PASS | Phone width: sidebar becomes a drawer
+PASS | Login page renders
+PASS | Login form validation shows field errors
+PASS | Student logs in -> dashboard overview
+PASS | ...probability value | 70%
+PASS | Placement probability widget shows a % and explanation
+PASS | ...eligible drive rows | 5 rows
+PASS | Eligible Drives tab lists drives with Apply buttons
+PASS | Student applies to the first drive
+PASS | My Applications tab shows the tracker; detail opens with history
+PASS | Student logs out
+PASS | Admin logs in -> drives list
+PASS | New drive form validates, then creates a drive
+PASS | Edit drive updates the package
+PASS | Close drive runs the procedure and reports rejections
+PASS | Drive detail lists applicants; shortlist the student
+PASS | Record an interview round
+PASS | Select the student, then record an offer
+PASS | ...status history entries | 3 entries
+PASS | View application: offer detail + status history
+PASS | Students page: filters and profile with CGPA percentile
+PASS | Analytics overview: bars + CGPA scatter with tooltip
+PASS | Analytics tab: Recruiters & packages
+PASS | Analytics tab: Top offers
+PASS | Analytics tab: Timeline
+PASS | Analytics tab: Company × department
+PASS | Student sees the offer and accepts it
+PASS | Phone width: sidebar becomes a drawer
+PASS | No console or page errors
+
+TOTAL: 28/28 passed
