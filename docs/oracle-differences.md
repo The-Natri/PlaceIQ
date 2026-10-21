@@ -103,7 +103,7 @@ Copied unchanged. They use only ANSI SQL (`JOIN`, `GROUP BY`, `COUNT`, `AVG`, `M
 
 > "Oracle won't let a row trigger read the table it's changing, so the check moves to the end of the statement using a compound trigger."
 
-🟡 **Unverified: concurrent accepts.** Both versions lock the student row (`SELECT ... FOR UPDATE`) so that two *simultaneous* accepts for the same student are serialized. The demo runs in one session, so it cannot show two transactions racing; the claim rests on the documented locking behaviour of both databases.
+🟡 **Unverified on Oracle: concurrent accepts.** Both versions lock the student row (`SELECT ... FOR UPDATE`) so that two *simultaneous* accepts for the same student are serialized. On **PostgreSQL this is verified**: `docs/evidence/transaction.md` scenario 4 runs two real connections, and the second one waits on the lock, then is refused with PL003. The Oracle demo runs in one SQL*Plus session, so it cannot show two transactions racing; on Oracle the claim rests on its documented locking behaviour.
 
 ## 7. Audit trigger (Section 7)
 
