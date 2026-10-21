@@ -103,7 +103,7 @@ Copied unchanged. They use only ANSI SQL (`JOIN`, `GROUP BY`, `COUNT`, `AVG`, `M
 
 > "Oracle won't let a row trigger read the table it's changing, so the check moves to the end of the statement using a compound trigger."
 
-🟡 **Unverified: concurrent accepts.** Both versions lock the student row (`SELECT ... FOR UPDATE`) so that two *simultaneous* accepts for the same student are serialized. The demo runs in one session, so it cannot show two transactions racing; the claim rests on the documented locking behaviour of both databases.
+🟡 **Unverified on Oracle: concurrent accepts.** Both versions lock the student row (`SELECT ... FOR UPDATE`) so that two *simultaneous* accepts for the same student are serialized. On **PostgreSQL this is verified**: `docs/evidence/transaction.md` scenario 4 runs two real connections, and the second one waits on the lock, then is refused with PL003. The Oracle demo runs in one SQL*Plus session, so it cannot show two transactions racing; on Oracle the claim rests on its documented locking behaviour.
 
 ## 7. Audit trigger (Section 7)
 
@@ -122,7 +122,7 @@ Neither version COMMITs inside the procedure, so the caller can roll the close b
 
 ## 9. Window-function views (Section 9)
 
-`RANK`, `DENSE_RANK`, `PERCENT_RANK`, `LAG` and `SUM(...) OVER` behave the same. The only change is the month bucket: Postgres `date_trunc('month', offer_date)::DATE` becomes Oracle `TRUNC(offer_date, 'MM')`. ✅ The demo queries `dept_offer_ranking_view` and `placement_timeline_view`; `student_cgpa_standing_view` was checked in the extra session (each department's percentiles come out 100 / 50 / 0).
+`RANK`, `DENSE_RANK`, `PERCENT_RANK`, `LAG` and `SUM(...) OVER` behave the same. Two changes, both in `placement_timeline_view`. The month bucket: Postgres `date_trunc('month', offer_date)::DATE` becomes Oracle `TRUNC(offer_date, 'MM')`. The list of every month between the first and last offer (so an empty month is a 0 row and `LAG` compares consecutive months): Postgres `generate_series(first, last, INTERVAL '1 month')` becomes Oracle `ADD_MONTHS(first, LEVEL - 1) ... CONNECT BY LEVEL <= MONTHS_BETWEEN(last, first) + 1`. Demo step 6e moves one offer to February inside a savepoint and shows January as a 0 row. ✅ The demo queries `dept_offer_ranking_view` and `placement_timeline_view`; `student_cgpa_standing_view` was checked in the extra session (each department's percentiles come out 100 / 50 / 0).
 
 ## 10. Materialized view (Section 10)
 

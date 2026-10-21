@@ -509,7 +509,7 @@ The best offers in each department, ranked with `RANK()` (ties share a rank).
   ```
 
 ### `GET /api/analytics/placement-timeline`
-Offers per month with a running total, from window functions. `change_from_prev_month` is `null` for the first month.
+Offers per month with a running total, from window functions. Every month from the first offer to the last is listed, and a month with no offers has `offers_in_month` 0, so `change_from_prev_month` always compares consecutive calendar months. It is `null` for the first month.
 - **Auth:** Admin
 - **Request:** none
 - **Success:** `200` (a list)

@@ -1,5 +1,5 @@
 
-SQL*Plus: Release 21.0.0.0.0 - Production on Wed Oct 21 11:53:13 2026
+SQL*Plus: Release 21.0.0.0.0 - Production on Wed Oct 21 14:37:20 2026
 Version 21.3.0.0.0
 
 Copyright (c) 1982, 2021, Oracle.  All rights reserved.
@@ -1121,14 +1121,32 @@ SQL> CREATE VIEW dept_offer_ranking_view AS
 View created.
 
 SQL> 
+SQL> -- Every month from the first offer to the last is generated, so a month with
+SQL> -- no offers is a 0 row and LAG compares real consecutive months (see the
+SQL> -- PostgreSQL version). Oracle has no generate_series: ADD_MONTHS with
+SQL> -- CONNECT BY LEVEL produces the same month list.
 SQL> CREATE VIEW placement_timeline_view AS
-  2  SELECT
-  3  	 TRUNC(o.offer_date, 'MM') AS month,
-  4  	 COUNT(*) AS offers_in_month,
-  5  	 SUM(COUNT(*)) OVER (ORDER BY TRUNC(o.offer_date, 'MM')) AS cumulative_offers,
-  6  	 COUNT(*) - LAG(COUNT(*)) OVER (ORDER BY TRUNC(o.offer_date, 'MM')) AS change_from_prev_month
-  7  FROM offer o
-  8  GROUP BY TRUNC(o.offer_date, 'MM');
+  2  WITH monthly AS (
+  3  	 SELECT TRUNC(offer_date, 'MM') AS month, COUNT(*) AS offers
+  4  	 FROM offer
+  5  	 GROUP BY TRUNC(offer_date, 'MM')
+  6  ),
+  7  bounds AS (
+  8  	 SELECT MIN(month) AS first_month, MAX(month) AS last_month FROM monthly
+  9  ),
+ 10  all_months AS (
+ 11  	 SELECT ADD_MONTHS(first_month, LEVEL - 1) AS month
+ 12  	 FROM bounds
+ 13  	 WHERE first_month IS NOT NULL
+ 14  	 CONNECT BY LEVEL <= MONTHS_BETWEEN(last_month, first_month) + 1
+ 15  )
+ 16  SELECT
+ 17  	 m.month,
+ 18  	 NVL(x.offers, 0) AS offers_in_month,
+ 19  	 SUM(NVL(x.offers, 0)) OVER (ORDER BY m.month) AS cumulative_offers,
+ 20  	 NVL(x.offers, 0) - LAG(NVL(x.offers, 0)) OVER (ORDER BY m.month) AS change_from_prev_month
+ 21  FROM all_months m
+ 22  LEFT JOIN monthly x ON x.month = m.month;
 
 View created.
 
@@ -1550,8 +1568,8 @@ SQL> PRINT rc
 
 DRIVE_ID COMPANY_ID COORDINATOR_ID JOB_ROLE                   DRIVE_DATE         PACKAGE_LPA   MIN_CGPA MAX_BACKLOGS DRIVE_TYPE STATUS               CREATED_AT
 -------- ---------- -------------- -------------------------- ------------------ ----------- ---------- ------------ ---------- -------------------- ----------------------------
-       2          2              1 Associate Engineer         15-FEB-26                  6.5        6.5            1 Full-Time  Ongoing              21-OCT-26 11.53.16.158191 AM
-       3          3              1 Graduate Engineer Trainee  20-FEB-26                  7.2          7            1 Full-Time  Ongoing              21-OCT-26 11.53.16.161713 AM
+       2          2              1 Associate Engineer         15-FEB-26                  6.5        6.5            1 Full-Time  Ongoing              21-OCT-26 02.37.27.552530 PM
+       3          3              1 Graduate Engineer Trainee  20-FEB-26                  7.2          7            1 Full-Time  Ongoing              21-OCT-26 02.37.27.554313 PM
 
 2 rows selected.
 
@@ -1840,9 +1858,54 @@ SQL> SELECT TO_CHAR(month, 'YYYY-MM') AS month, offers_in_month, cumulative_offe
 MONTH      OFFERS_IN_MONTH CUMULATIVE_OFFERS CHANGE_FROM_PREV_MONTH
 ---------- --------------- ----------------- ----------------------
 2025-12                  2                 2
-2026-10                  2                 4                      0
+2026-01                  0                 2                     -2
+2026-02                  0                 2                      0
+2026-03                  0                 2                      0
+2026-04                  0                 2                      0
+2026-05                  0                 2                      0
+2026-06                  0                 2                      0
+2026-07                  0                 2                      0
+2026-08                  0                 2                      0
+2026-09                  0                 2                      0
+2026-10                  2                 4                      2
 
-2 rows selected.
+11 rows selected.
+
+SQL> 
+SQL> PROMPT  6e. Same view with one offer moved to February: January has no offers
+6e. Same view with one offer moved to February: January has no offers
+SQL> PROMPT      but still appears as a 0 row, so LAG compares real consecutive months
+but still appears as a 0 row, so LAG compares real consecutive months
+SQL> SAVEPOINT before_gap;
+
+Savepoint created.
+
+SQL> UPDATE offer SET offer_date = DATE '2026-02-12' WHERE offered_package_lpa = 14.50;
+
+1 row updated.
+
+SQL> SELECT TO_CHAR(month, 'YYYY-MM') AS month, offers_in_month, cumulative_offers, change_from_prev_month
+  2    FROM placement_timeline_view ORDER BY 1;
+
+MONTH      OFFERS_IN_MONTH CUMULATIVE_OFFERS CHANGE_FROM_PREV_MONTH
+---------- --------------- ----------------- ----------------------
+2025-12                  1                 1
+2026-01                  0                 1                     -1
+2026-02                  1                 2                      1
+2026-03                  0                 2                     -1
+2026-04                  0                 2                      0
+2026-05                  0                 2                      0
+2026-06                  0                 2                      0
+2026-07                  0                 2                      0
+2026-08                  0                 2                      0
+2026-09                  0                 2                      0
+2026-10                  2                 4                      2
+
+11 rows selected.
+
+SQL> ROLLBACK TO SAVEPOINT before_gap;
+
+Rollback complete.
 
 SQL> 
 SQL> PROMPT  6e. Materialized view - a stored snapshot. It still shows the data as of
@@ -1990,7 +2053,7 @@ SQL> SELECT TO_CHAR(MAX(refreshed_at), 'YYYY-MM-DD HH24:MI:SS') AS refreshed_at 
 
 REFRESHED_AT
 -----------------------------------
-2026-10-21 11:53:16
+2026-10-21 14:37:28
 
 1 row selected.
 
@@ -2002,7 +2065,7 @@ SQL> SELECT TO_CHAR(MAX(refreshed_at), 'YYYY-MM-DD HH24:MI:SS') AS refreshed_at 
 
 REFRESHED_AT
 -----------------------------------
-2026-10-21 11:53:17
+2026-10-21 14:37:28
 
 1 row selected.
 

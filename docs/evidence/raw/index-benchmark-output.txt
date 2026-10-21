@@ -1,0 +1,186 @@
+Building placement_bench: 50,000 students, 2,000 drives, 250,000 applications ...
+  loaded students 1-10,000
+  loaded students 10,001-20,000
+  loaded students 20,001-30,000
+  loaded students 30,001-40,000
+  loaded students 40,001-50,000
+
+| Query | Index | With indexes | Without indexes | Speed-up |
+|---|---|---|---|---|
+| Applicants for one drive (admin 'view applicants') | `idx_application_drive` | 0.13 ms (Bitmap Heap Scan) | 10.31 ms (Seq Scan) | 81.2x |
+| Top-CGPA students in one department (admin student filter) | `idx_student_cgpa / idx_student_dept` | 0.62 ms (Bitmap Heap Scan) | 6.15 ms (Seq Scan) | 9.9x |
+| Students in one department (department filter) | `idx_student_dept` | 2.08 ms (Bitmap Heap Scan) | 7.20 ms (Seq Scan) | 3.5x |
+| Applications in one status (admin status triage) | `idx_application_status` | 4.56 ms (Bitmap Heap Scan) | 13.23 ms (Seq Scan) | 2.9x |
+| Drives for one company | `idx_drive_company` | 0.07 ms (Bitmap Heap Scan) | 0.12 ms (Seq Scan) | 1.8x |
+
+(median of 7 warm runs each; placement_bench was dropped afterwards)
+
+## EXPLAIN (ANALYZE, BUFFERS) plans
+
+### Applicants for one drive (admin 'view applicants')
+
+`SELECT application_id, student_id, status FROM application WHERE drive_id = 1234`
+
+With indexes:
+
+```text
+Bitmap Heap Scan on application  (cost=5.26..400.75 rows=124 width=17) (actual time=0.027..0.100 rows=125 loops=1)
+  Recheck Cond: (drive_id = 1234)
+  Heap Blocks: exact=125
+  Buffers: shared hit=127
+  ->  Bitmap Index Scan on idx_application_drive  (cost=0.00..5.22 rows=124 width=0) (actual time=0.010..0.010 rows=125 loops=1)
+        Index Cond: (drive_id = 1234)
+        Buffers: shared hit=2
+Planning Time: 0.044 ms
+Execution Time: 0.117 ms
+```
+
+Without indexes:
+
+```text
+Gather  (cost=1000.00..4816.64 rows=124 width=17) (actual time=0.218..10.712 rows=125 loops=1)
+  Workers Planned: 1
+  Workers Launched: 1
+  Buffers: shared hit=1966
+  ->  Parallel Seq Scan on application  (cost=0.00..3804.24 rows=73 width=17) (actual time=0.173..6.929 rows=62 loops=2)
+        Filter: (drive_id = 1234)
+        Rows Removed by Filter: 124938
+        Buffers: shared hit=1966
+Planning Time: 0.061 ms
+Execution Time: 10.734 ms
+```
+
+### Top-CGPA students in one department (admin student filter)
+
+`SELECT student_id, name, cgpa FROM student WHERE dept_id = 3 AND cgpa >= 9.7`
+
+With indexes:
+
+```text
+Bitmap Heap Scan on student  (cost=134.78..750.42 rows=339 width=23) (actual time=0.389..0.533 rows=325 loops=1)
+  Recheck Cond: ((cgpa >= 9.7) AND (dept_id = 3))
+  Heap Blocks: exact=282
+  Buffers: shared hit=298
+  ->  BitmapAnd  (cost=134.78..134.78 rows=339 width=0) (actual time=0.353..0.353 rows=0 loops=1)
+        Buffers: shared hit=16
+        ->  Bitmap Index Scan on idx_student_cgpa  (cost=0.00..39.54 rows=2033 width=0) (actual time=0.149..0.149 rows=1954 loops=1)
+              Index Cond: (cgpa >= 9.7)
+              Buffers: shared hit=7
+        ->  Bitmap Index Scan on idx_student_dept  (cost=0.00..94.83 rows=8338 width=0) (actual time=0.164..0.164 rows=8334 loops=1)
+              Index Cond: (dept_id = 3)
+              Buffers: shared hit=9
+Planning Time: 0.055 ms
+Execution Time: 0.557 ms
+```
+
+Without indexes:
+
+```text
+Seq Scan on student  (cost=0.00..1519.00 rows=339 width=23) (actual time=0.015..7.221 rows=325 loops=1)
+  Filter: ((cgpa >= 9.7) AND (dept_id = 3))
+  Rows Removed by Filter: 49675
+  Buffers: shared hit=769
+Planning Time: 0.047 ms
+Execution Time: 7.246 ms
+```
+
+### Students in one department (department filter)
+
+`SELECT COUNT(*) FROM student WHERE dept_id = 3`
+
+With indexes:
+
+```text
+Aggregate  (cost=990.98..990.99 rows=1 width=8) (actual time=2.501..2.502 rows=1 loops=1)
+  Buffers: shared hit=778
+  ->  Bitmap Heap Scan on student  (cost=96.91..970.13 rows=8338 width=0) (actual time=0.353..1.923 rows=8334 loops=1)
+        Recheck Cond: (dept_id = 3)
+        Heap Blocks: exact=769
+        Buffers: shared hit=778
+        ->  Bitmap Index Scan on idx_student_dept  (cost=0.00..94.83 rows=8338 width=0) (actual time=0.234..0.235 rows=8334 loops=1)
+              Index Cond: (dept_id = 3)
+              Buffers: shared hit=9
+Planning Time: 0.069 ms
+Execution Time: 2.524 ms
+```
+
+Without indexes:
+
+```text
+Aggregate  (cost=1414.85..1414.86 rows=1 width=8) (actual time=7.365..7.366 rows=1 loops=1)
+  Buffers: shared hit=769
+  ->  Seq Scan on student  (cost=0.00..1394.00 rows=8338 width=0) (actual time=0.010..6.601 rows=8334 loops=1)
+        Filter: (dept_id = 3)
+        Rows Removed by Filter: 41666
+        Buffers: shared hit=769
+Planning Time: 0.066 ms
+Execution Time: 7.386 ms
+```
+
+### Applications in one status (admin status triage)
+
+`SELECT COUNT(*) FROM application WHERE status = 'Selected'`
+
+With indexes:
+
+```text
+Aggregate  (cost=2169.03..2169.04 rows=1 width=8) (actual time=10.863..10.865 rows=1 loops=1)
+  Buffers: shared hit=1941
+  ->  Bitmap Heap Scan on application  (cost=87.90..2149.84 rows=7675 width=0) (actual time=0.809..10.271 rows=7568 loops=1)
+        Recheck Cond: ((status)::text = 'Selected'::text)
+        Heap Blocks: exact=1932
+        Buffers: shared hit=1941
+        ->  Bitmap Index Scan on idx_application_status  (cost=0.00..85.98 rows=7675 width=0) (actual time=0.441..0.442 rows=7568 loops=1)
+              Index Cond: ((status)::text = 'Selected'::text)
+              Buffers: shared hit=9
+Planning Time: 0.064 ms
+Execution Time: 10.891 ms
+```
+
+Without indexes:
+
+```text
+Finalize Aggregate  (cost=4815.64..4815.65 rows=1 width=8) (actual time=12.656..14.959 rows=1 loops=1)
+  Buffers: shared hit=1966
+  ->  Gather  (cost=4815.52..4815.63 rows=1 width=8) (actual time=12.192..14.940 rows=2 loops=1)
+        Workers Planned: 1
+        Workers Launched: 1
+        Buffers: shared hit=1966
+        ->  Partial Aggregate  (cost=3815.52..3815.53 rows=1 width=8) (actual time=10.506..10.507 rows=1 loops=2)
+              Buffers: shared hit=1966
+              ->  Parallel Seq Scan on application  (cost=0.00..3804.24 rows=4515 width=0) (actual time=0.011..10.278 rows=3784 loops=2)
+                    Filter: ((status)::text = 'Selected'::text)
+                    Rows Removed by Filter: 121216
+                    Buffers: shared hit=1966
+Planning Time: 0.057 ms
+Execution Time: 14.980 ms
+```
+
+### Drives for one company
+
+`SELECT drive_id, job_role FROM drive WHERE company_id = 7`
+
+With indexes:
+
+```text
+Bitmap Heap Scan on drive  (cost=4.59..33.40 rows=40 width=13) (actual time=0.023..0.049 rows=40 loops=1)
+  Recheck Cond: (company_id = 7)
+  Heap Blocks: exact=26
+  Buffers: shared hit=28
+  ->  Bitmap Index Scan on idx_drive_company  (cost=0.00..4.58 rows=40 width=0) (actual time=0.011..0.012 rows=40 loops=1)
+        Index Cond: (company_id = 7)
+        Buffers: shared hit=2
+Planning Time: 0.060 ms
+Execution Time: 0.151 ms
+```
+
+Without indexes:
+
+```text
+Seq Scan on drive  (cost=0.00..52.00 rows=40 width=13) (actual time=0.006..0.111 rows=40 loops=1)
+  Filter: (company_id = 7)
+  Rows Removed by Filter: 1960
+  Buffers: shared hit=27
+Planning Time: 0.031 ms
+Execution Time: 0.119 ms
+```

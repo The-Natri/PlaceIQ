@@ -1,0 +1,54 @@
+== Building placement_smoke (schema + seed) ==
+NOTICE:  database "placement_smoke" does not exist, skipping
+Students marked 'Placed' by the trigger: 95 / 180
+Seeding complete.
+== Starting backend on :5001 against placement_smoke ==
+== Running transaction_evidence.py ==
+### 1. Accept: one transaction, three writes, one COMMIT
+
+```text
+Setup: Ira Verma (student 5) applied to drive 24; the admin moved application 518 to Selected and recorded offer 178 (Pending, 9.5 LPA).
+
+  [before] offer.status=Pending, offer.joining_date=None, student.placement_status=Placed, offer_history=['Created']
+> POST /api/offers/178/accept
+< HTTP 200 {"offer_id": 178, "status": "Accepted"}
+  [after ] offer.status=Accepted, offer.joining_date=2026-12-20, student.placement_status=Placed, offer_history=['Created', 'Accepted']
+```
+
+### 2. Decline: the student's only offer, so placement_status goes back
+
+```text
+Setup: Rudra Desai (student 6) applied to drive 24; the admin moved application 519 to Selected and recorded offer 179 (Pending, 7.0 LPA).
+
+  [before] offer.status=Pending, offer.joining_date=None, student.placement_status=Placed, offer_history=['Created']
+> POST /api/offers/179/decline
+< HTTP 200 {"offer_id": 179, "status": "Declined"}
+  [after ] offer.status=Declined, offer.joining_date=None, student.placement_status=Not Placed, offer_history=['Created', 'Declined']
+```
+
+### 3. Refused mid-transaction: a second acceptance (PL003) is rolled back
+
+```text
+Setup: Shreya Sharma (student 18) has already accepted one offer; offer 70 is a second, Pending offer.
+
+  [before] offer.status=Pending, offer.joining_date=None, student.placement_status=Placed, offer_history=['Created']
+> POST /api/offers/70/accept
+< HTTP 409 {"error": "Student 18 has already accepted another offer"}
+  [after ] offer.status=Pending, offer.joining_date=None, student.placement_status=Placed, offer_history=['Created']
+```
+
+### 4. Two acceptances at the same moment: the row lock serializes them
+
+```text
+Setup: Priya Agarwal (student 10) applied to drive 15; the admin moved application 520 to Selected and recorded offer 180 (Pending, 10.0 LPA).
+
+Setup: the same student now also has offer 181 (Pending). Two connections will each accept one.
+
+  t= 0.06s  A: UPDATE offer 180 -> Accepted done (trigger took the student-row lock); A has NOT committed
+  t= 0.06s  B: UPDATE offer 181 -> Accepted sent
+  t= 1.56s  (B still waiting after 1.5 s: True)
+  t= 1.56s  A: COMMIT
+  t= 1.57s  B: refused, SQLSTATE PL003: Student 10 has already accepted another offer
+  [after] offer 180: Accepted, offer 181: Pending
+```
+runner exit 0

@@ -897,14 +897,32 @@ JOIN drive dr       ON dr.drive_id = a.drive_id
 JOIN company c      ON c.company_id = dr.company_id
 WHERE o.status <> 'Declined';
 
+-- Every month from the first offer to the last is generated, so a month with
+-- no offers is a 0 row and LAG compares real consecutive months (see the
+-- PostgreSQL version). Oracle has no generate_series: ADD_MONTHS with
+-- CONNECT BY LEVEL produces the same month list.
 CREATE VIEW placement_timeline_view AS
+WITH monthly AS (
+    SELECT TRUNC(offer_date, 'MM') AS month, COUNT(*) AS offers
+    FROM offer
+    GROUP BY TRUNC(offer_date, 'MM')
+),
+bounds AS (
+    SELECT MIN(month) AS first_month, MAX(month) AS last_month FROM monthly
+),
+all_months AS (
+    SELECT ADD_MONTHS(first_month, LEVEL - 1) AS month
+    FROM bounds
+    WHERE first_month IS NOT NULL
+    CONNECT BY LEVEL <= MONTHS_BETWEEN(last_month, first_month) + 1
+)
 SELECT
-    TRUNC(o.offer_date, 'MM') AS month,
-    COUNT(*) AS offers_in_month,
-    SUM(COUNT(*)) OVER (ORDER BY TRUNC(o.offer_date, 'MM')) AS cumulative_offers,
-    COUNT(*) - LAG(COUNT(*)) OVER (ORDER BY TRUNC(o.offer_date, 'MM')) AS change_from_prev_month
-FROM offer o
-GROUP BY TRUNC(o.offer_date, 'MM');
+    m.month,
+    NVL(x.offers, 0) AS offers_in_month,
+    SUM(NVL(x.offers, 0)) OVER (ORDER BY m.month) AS cumulative_offers,
+    NVL(x.offers, 0) - LAG(NVL(x.offers, 0)) OVER (ORDER BY m.month) AS change_from_prev_month
+FROM all_months m
+LEFT JOIN monthly x ON x.month = m.month;
 
 CREATE VIEW student_cgpa_standing_view AS
 SELECT

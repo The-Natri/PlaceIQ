@@ -100,6 +100,11 @@ at most once").
 → ... → Selected/Rejected) — it is not a fact about the student or the drive
 independently, so it belongs here and only here. 3NF.
 
+Which status changes are *allowed* (for example, nothing leaves `Rejected`)
+is a rule about transitions between rows' old and new values, not a
+functional dependency, so normalization can't express it. It is enforced by
+the BEFORE UPDATE trigger `trg_application_status_transition` (PL007).
+
 ## interview_round
 **Key:** `round_id`
 **FDs:** `round_id → application_id, round_number, round_type, round_date,
@@ -116,6 +121,12 @@ status, joining_date`
 Also `application_id → offer_id` (candidate key via UNIQUE — this is what
 enforces the 1:0..1 Application↔Offer cardinality). 3NF.
 
+"An offer may only exist for a `Selected` application" depends on a value in
+*another* table, which no CHECK constraint can see, so it is the BEFORE
+INSERT trigger `trg_offer_requires_selected` (PL006). "At most one Accepted
+offer per student" spans rows of `offer` joined through `application`, so it
+is the trigger `trg_offer_before_accept` (PL003).
+
 ## offer_history (append-only audit log)
 **Key:** `history_id`
 **FDs:** `history_id → offer_id, action, action_timestamp, notes`
@@ -125,11 +136,31 @@ state-change event is the correct normalized shape for an audit trail
 (each row is an independent fact about "this event happened", not a
 repeating group). 3NF.
 
+## application_status_history (append-only audit log)
+**Key:** `history_id`
+**FDs:** `history_id → application_id, old_status, new_status, changed_at`
+Same reasoning as `offer_history`: one row per status change. Storing
+`old_status` here is not redundant with `application.status`. The latter is
+the *current* value, while each history row records what the value *was* at
+one moment, which nothing else in the schema determines. Rows are written
+only by the AFTER UPDATE trigger `trg_application_status_audit`, so the log
+can't be skipped by application code. 3NF.
+
+## Not tables: views and the materialized view
+
+The six views store nothing; they are saved queries over the 13 tables, so
+they can't introduce anomalies. `mv_company_dept_placements` **does** store
+rows. It is a deliberately redundant, read-only snapshot (offers counted per
+company × department) that is refreshed on demand. It is never written to
+directly, and it is always rebuildable from the base tables, so it is a cache,
+not part of the normalized design. Its `refreshed_at` column tells the reader
+how stale it may be.
+
 ---
 
 ## Summary
 
-Every table's non-key attributes depend on the whole key and nothing but the
+All 13 tables are in 3NF: every non-key attribute depends on the whole key and nothing but the
 key, with one intentional, trigger-guaranteed exception
 (`student.placement_status`) that is called out explicitly rather than
 hidden. No table stores a value that is fully determined by a non-key
