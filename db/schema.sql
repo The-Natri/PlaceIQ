@@ -744,17 +744,33 @@ JOIN company c      ON c.company_id = dr.company_id
 WHERE o.status <> 'Declined';
 
 -- Offers per month, with a running (cumulative) total and the change from
--- the previous month. The window functions run AFTER the GROUP BY, over
--- the monthly rows: SUM(...) OVER (ORDER BY month) is a running total,
--- LAG(...) reads the previous month's value.
+-- the previous month. SUM(...) OVER (ORDER BY month) is a running total and
+-- LAG(...) reads the previous ROW's value.
+--
+-- Why the generate_series: grouping offers by month only produces rows for
+-- months that HAD offers. With no offers in January, LAG on February's row
+-- would read December's count and call it "the previous month". So every
+-- month from the first offer to the last is generated, and the monthly
+-- counts are LEFT JOINed onto it: an empty month becomes a 0 row, and LAG
+-- really is the previous calendar month.
 CREATE VIEW placement_timeline_view AS
+WITH monthly AS (
+    SELECT date_trunc('month', offer_date)::DATE AS month, COUNT(*) AS offers
+    FROM offer
+    GROUP BY date_trunc('month', offer_date)
+),
+all_months AS (
+    SELECT gs::DATE AS month
+    FROM (SELECT MIN(month) AS first_month, MAX(month) AS last_month FROM monthly) b,
+         generate_series(b.first_month, b.last_month, INTERVAL '1 month') gs
+)
 SELECT
-    date_trunc('month', o.offer_date)::DATE AS month,
-    COUNT(*) AS offers_in_month,
-    SUM(COUNT(*)) OVER (ORDER BY date_trunc('month', o.offer_date)) AS cumulative_offers,
-    COUNT(*) - LAG(COUNT(*)) OVER (ORDER BY date_trunc('month', o.offer_date)) AS change_from_prev_month
-FROM offer o
-GROUP BY date_trunc('month', o.offer_date);
+    m.month,
+    COALESCE(x.offers, 0) AS offers_in_month,
+    SUM(COALESCE(x.offers, 0)) OVER (ORDER BY m.month) AS cumulative_offers,
+    COALESCE(x.offers, 0) - LAG(COALESCE(x.offers, 0)) OVER (ORDER BY m.month) AS change_from_prev_month
+FROM all_months m
+LEFT JOIN monthly x ON x.month = m.month;
 
 -- Where each student's CGPA stands within their own department.
 -- PERCENT_RANK() is 0 for the lowest CGPA and 1 for the highest;

@@ -122,7 +122,7 @@ Neither version COMMITs inside the procedure, so the caller can roll the close b
 
 ## 9. Window-function views (Section 9)
 
-`RANK`, `DENSE_RANK`, `PERCENT_RANK`, `LAG` and `SUM(...) OVER` behave the same. The only change is the month bucket: Postgres `date_trunc('month', offer_date)::DATE` becomes Oracle `TRUNC(offer_date, 'MM')`. ✅ The demo queries `dept_offer_ranking_view` and `placement_timeline_view`; `student_cgpa_standing_view` was checked in the extra session (each department's percentiles come out 100 / 50 / 0).
+`RANK`, `DENSE_RANK`, `PERCENT_RANK`, `LAG` and `SUM(...) OVER` behave the same. Two changes, both in `placement_timeline_view`. The month bucket: Postgres `date_trunc('month', offer_date)::DATE` becomes Oracle `TRUNC(offer_date, 'MM')`. The list of every month between the first and last offer (so an empty month is a 0 row and `LAG` compares consecutive months): Postgres `generate_series(first, last, INTERVAL '1 month')` becomes Oracle `ADD_MONTHS(first, LEVEL - 1) ... CONNECT BY LEVEL <= MONTHS_BETWEEN(last, first) + 1`. Demo step 6e moves one offer to February inside a savepoint and shows January as a 0 row. ✅ The demo queries `dept_offer_ranking_view` and `placement_timeline_view`; `student_cgpa_standing_view` was checked in the extra session (each department's percentiles come out 100 / 50 / 0).
 
 ## 10. Materialized view (Section 10)
 

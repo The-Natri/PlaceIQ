@@ -146,7 +146,8 @@ def build_bench_db():
 
 
 def time_query(cur, sql):
-    """Median execution time (ms) over RUNS runs, plus the plan's top scan node."""
+    """Median execution time (ms) over RUNS runs, the plan's scan node, and the
+    full text plan of one more run (what a reader of the report checks)."""
     cur.execute(sql)  # warm-up: pulls the pages into cache so we compare plans, not disk
     cur.fetchall()
     times, node = [], None
@@ -155,7 +156,12 @@ def time_query(cur, sql):
         plan = cur.fetchone()[0][0]
         times.append(plan["Execution Time"])
         node = scan_node(plan["Plan"])
-    return statistics.median(times), node
+    # The text form is what psql shows and what the report quotes. It comes
+    # from one extra run, so its "Execution Time" is a single sample, not
+    # the median in the table.
+    cur.execute("EXPLAIN (ANALYZE, BUFFERS) " + sql)
+    text_plan = "\n".join(row[0] for row in cur.fetchall())
+    return statistics.median(times), node, text_plan
 
 
 def scan_node(plan):
@@ -194,12 +200,18 @@ def main():
     print("\n| Query | Index | With indexes | Without indexes | Speed-up |")
     print("|---|---|---|---|---|")
     for name, idx, _ in QUERIES:
-        t_with, node_with = with_idx[name]
-        t_without, node_without = without_idx[name]
+        t_with, node_with, _ = with_idx[name]
+        t_without, node_without, _ = without_idx[name]
         print(f"| {name} | `{idx}` | {t_with:.2f} ms ({node_with}) | "
               f"{t_without:.2f} ms ({node_without}) | {t_without / t_with:.1f}x |")
 
     print(f"\n(median of {RUNS} warm runs each; {BENCH_DB} was dropped afterwards)")
+
+    print("\n## EXPLAIN (ANALYZE, BUFFERS) plans")
+    for name, _, sql in QUERIES:
+        print(f"\n### {name}\n\n`{sql}`")
+        for label, results in (("With indexes", with_idx), ("Without indexes", without_idx)):
+            print(f"\n{label}:\n\n```text\n{results[name][2]}\n```")
 
 
 if __name__ == "__main__":

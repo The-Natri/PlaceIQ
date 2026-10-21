@@ -227,6 +227,14 @@ PROMPT  6d. placement_timeline_view - running total (SUM OVER) and LAG
 SELECT TO_CHAR(month, 'YYYY-MM') AS month, offers_in_month, cumulative_offers, change_from_prev_month
   FROM placement_timeline_view ORDER BY 1;
 
+PROMPT  6e. Same view with one offer moved to February: January has no offers
+PROMPT      but still appears as a 0 row, so LAG compares real consecutive months
+SAVEPOINT before_gap;
+UPDATE offer SET offer_date = DATE '2026-02-12' WHERE offered_package_lpa = 14.50;
+SELECT TO_CHAR(month, 'YYYY-MM') AS month, offers_in_month, cumulative_offers, change_from_prev_month
+  FROM placement_timeline_view ORDER BY 1;
+ROLLBACK TO SAVEPOINT before_gap;
+
 PROMPT  6e. Materialized view - a stored snapshot. It still shows the data as of
 PROMPT      its last refresh: Meera's and Aisha's new offers from this session
 PROMPT      are in OFFER but NOT in the snapshot yet.
