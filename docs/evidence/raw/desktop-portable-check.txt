@@ -1,0 +1,10 @@
+$ cmd /c start "" desktop\dist\PlaceIQ-1.0.0-portable.exe      (ELECTRON_RUN_AS_NODE removed from the environment)
+$ poll http://127.0.0.1:8080/api/health ; docker ps ; taskkill /IM PlaceIQ.exe (graceful close, no /F) ; docker ps ; tasklist
+health ok after 25s: {"status":"ok"}
+placeiq_app placement_db 
+after close: containers=[] placeiq_processes=0
+
+$ docker run --rm --entrypoint sh -v college-placement-system_app_data:/data placeiq-app -c 'ls -l /data; echo "bytes: $(wc -c < /data/jwt_secret)"'
+total 4
+-rw------- 1 placeiq placeiq 87 Oct 22 05:02 jwt_secret
+bytes: 87

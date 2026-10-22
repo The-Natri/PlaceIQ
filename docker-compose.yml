@@ -9,6 +9,11 @@
 # on 127.0.0.1, so nothing outside this machine can reach it unless you share
 # it on purpose (scripts/share.ps1). The database and the ML service are
 # reachable only by the app.
+# The project name decides the volume names. It is fixed (it matches this
+# folder's name) so the desktop app, which runs a copy of this file from its
+# own install folder, uses the same data as running it from here.
+name: college-placement-system
+
 services:
   db:
     image: postgres:16

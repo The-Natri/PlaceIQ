@@ -1,0 +1,69 @@
+{
+  "name": "placeiq-desktop",
+  "productName": "PlaceIQ",
+  "version": "1.0.0",
+  "description": "Desktop launcher for PlaceIQ: runs the Docker stack and shows it in a window.",
+  "main": "main.js",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "edu.placeiq.desktop",
+    "productName": "PlaceIQ",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "loading.html",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "..",
+        "to": "stack",
+        "filter": [
+          "docker-compose.yml",
+          "Dockerfile",
+          ".dockerignore",
+          "backend/**/*",
+          "!backend/**/__pycache__/**",
+          "ml-service/*.py",
+          "ml-service/requirements.txt",
+          "ml-service/constraints.txt",
+          "ml-service/Dockerfile",
+          "ml-service/.dockerignore",
+          "db/schema.sql",
+          "db/seed.py",
+          "docker/**/*",
+          "!**/__pycache__/**",
+          "frontend/index.html",
+          "frontend/package.json",
+          "frontend/package-lock.json",
+          "frontend/vite.config.js",
+          "frontend/src/**/*",
+          "frontend/public/**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ]
+    },
+    "portable": {
+      "artifactName": "PlaceIQ-${version}-portable.exe"
+    }
+  },
+  "allowScripts": {
+    "electron@33.2.1": true
+  }
+}
