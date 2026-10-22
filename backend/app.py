@@ -46,6 +46,9 @@ def create_app():
             "which generate one into a git-ignored file, or set it in .env."
         )
 
+    if Config.PUBLIC_MODE and len(Config.JWT_SECRET_KEY) < 32:
+        raise RuntimeError("PUBLIC_MODE=1 needs a strong JWT_SECRET_KEY (32+ characters) from .env.public.")
+
     # static_folder=None: the built frontend is served by spa() below, which
     # also handles client-side routes. Flask's default /static would not.
     app = Flask(__name__, static_folder=None)

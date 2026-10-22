@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY backend/ backend/
 COPY db/schema.sql db/seed.py db/
-COPY docker/init_db.py docker/app-entrypoint.sh docker/
+COPY docker/init_db.py docker/set_passwords.py docker/app-entrypoint.sh docker/
 COPY --from=frontend /src/dist frontend/dist
 
 # Run as an unprivileged user; /data holds the generated JWT secret.

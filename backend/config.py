@@ -29,6 +29,12 @@ class Config:
     JWT_EXPIRY_HOURS = 12
     ML_SERVICE_URL = os.environ.get("ML_SERVICE_URL", "http://localhost:6000")
 
+    # 1 = this instance is shared on the internet (scripts/share.ps1). It then
+    # refuses to start without strong secrets from the git-ignored
+    # .env.public, and trusts the Cloudflare tunnel's CF-Connecting-IP header
+    # for rate limiting (utils/rate_limit.py explains why that is safe only here).
+    PUBLIC_MODE = os.environ.get("PUBLIC_MODE", "0") == "1"
+
     # Off unless explicitly switched on: Flask's debugger lets anyone who can
     # reach the server run arbitrary Python, so it must never be the default.
     DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1"

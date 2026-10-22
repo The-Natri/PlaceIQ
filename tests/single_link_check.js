@@ -82,6 +82,7 @@ const check = (name, ok, detail = "") => results.push({ ok: Boolean(ok), name, d
     await page.locator("#login-password").fill(ADMIN_PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.getByRole("heading", { name: "Placement drives" }).waitFor();
+    await page.locator("table tbody tr").first().waitFor();  // rows arrive after the heading
     const drives = await page.locator("table tbody tr").count();
     check("Admin signs in and sees the drive list", drives > 0, `${drives} drives`);
 

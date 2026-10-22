@@ -44,8 +44,10 @@ services:
       ML_SERVICE_URL: http://ml:6000
       # Empty: the entrypoint generates one into the app_data volume.
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      # Public sharing (scripts/share.ps1 passes --env-file .env.public):
       PUBLIC_MODE: ${PUBLIC_MODE:-0}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      STUDENT_PASSWORD: ${STUDENT_PASSWORD:-}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
