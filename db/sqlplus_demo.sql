@@ -10,7 +10,7 @@
 --   1. Stored function   fn_check_eligibility (eligible / ineligible / missing)
 --   2. Set-returning fn  fn_get_eligible_drives (REF CURSOR)
 --   3. Triggers firing   placement status on offer insert + audit log
---   4. Rule triggers     five invalid writes, each refused with its own error
+--   4. Rule triggers     six invalid writes, each refused with its own error
 --   5. Procedure         sp_close_drive (OUT parameter)
 --   6. Views             analytics, window functions, materialized view
 --   7. Transaction       the offer-accept statements, undone with ROLLBACK
@@ -62,6 +62,8 @@ COLUMN v NEW_VALUE da_id NOPRINT
 SELECT drive_id v FROM drive WHERE job_role = 'Data Analyst';
 COLUMN v NEW_VALUE get_id NOPRINT
 SELECT drive_id v FROM drive WHERE job_role = 'Graduate Engineer Trainee';
+COLUMN v NEW_VALUE ae_id NOPRINT
+SELECT drive_id v FROM drive WHERE job_role = 'Associate Engineer';
 COLUMN v NEW_VALUE aisha_id NOPRINT
 SELECT student_id v FROM student WHERE reg_no = 'CSE2024001';
 COLUMN v NEW_VALUE kavya_id NOPRINT
@@ -183,6 +185,14 @@ PROMPT  Oracle rolled back only the failed statement - the offer is still Pendin
 PROMPT  and our transaction (all the work above) is still open:
 SELECT o.offer_id, o.status, o.offered_package_lpa FROM offer o WHERE o.application_id = &aisha_swe_app;
 
+PROMPT  4f. The Associate Engineer deadline is moved to yesterday (inside a
+PROMPT      savepoint). Aisha is eligible, but she is now too late -> ORA-20008
+SAVEPOINT before_deadline;
+UPDATE drive SET application_deadline = TRUNC(SYSDATE) - 1 WHERE drive_id = &ae_id;
+INSERT INTO application (student_id, drive_id) VALUES (&aisha_id, &ae_id);
+ROLLBACK TO SAVEPOINT before_deadline;
+SELECT application_deadline FROM drive WHERE drive_id = &ae_id;
+
 -- -----------------------------------------------------------------------------
 PROMPT
 PROMPT ====================================================================
@@ -227,15 +237,16 @@ PROMPT  6d. placement_timeline_view - running total (SUM OVER) and LAG
 SELECT TO_CHAR(month, 'YYYY-MM') AS month, offers_in_month, cumulative_offers, change_from_prev_month
   FROM placement_timeline_view ORDER BY 1;
 
-PROMPT  6e. Same view with one offer moved to February: January has no offers
-PROMPT      but still appears as a 0 row, so LAG compares real consecutive months
+PROMPT  6e. Same view with one offer moved two months earlier: the month in
+PROMPT      between has no offers but still appears as a 0 row, so LAG compares
+PROMPT      real consecutive months
 SAVEPOINT before_gap;
-UPDATE offer SET offer_date = DATE '2026-02-12' WHERE offered_package_lpa = 14.50;
+UPDATE offer SET offer_date = ADD_MONTHS(offer_date, -2) WHERE offered_package_lpa = 14.50;
 SELECT TO_CHAR(month, 'YYYY-MM') AS month, offers_in_month, cumulative_offers, change_from_prev_month
   FROM placement_timeline_view ORDER BY 1;
 ROLLBACK TO SAVEPOINT before_gap;
 
-PROMPT  6e. Materialized view - a stored snapshot. It still shows the data as of
+PROMPT  6f. Materialized view - a stored snapshot. It still shows the data as of
 PROMPT      its last refresh: Meera's and Aisha's new offers from this session
 PROMPT      are in OFFER but NOT in the snapshot yet.
 SELECT company_name, dept_name, offers_count, avg_package_lpa

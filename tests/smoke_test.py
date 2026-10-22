@@ -66,7 +66,7 @@ def open_eligible_pairs(n):
     return q("""
         SELECT DISTINCT ON (s.student_id) s.student_id, s.email, d.drive_id
         FROM student s CROSS JOIN drive d
-        WHERE s.placement_status = 'Not Placed' AND d.status IN ('Upcoming', 'Ongoing')
+        WHERE s.placement_status = 'Not Placed' AND d.status IN ('Upcoming', 'Ongoing') AND d.application_deadline >= CURRENT_DATE
           AND fn_check_eligibility(s.student_id, d.drive_id)
           AND NOT EXISTS (SELECT 1 FROM application a WHERE a.student_id = s.student_id AND a.drive_id = d.drive_id)
         ORDER BY s.student_id, d.drive_id
@@ -79,7 +79,7 @@ check("Admin login", r.status_code == 200, f"HTTP {r.status_code}")
 r, _ = login("admin", "tpo@campus.edu", "wrong-password")
 check("Admin login with wrong password rejected", r.status_code == 401, f"HTTP {r.status_code}")
 
-A, B, C = open_eligible_pairs(3)
+A, B, C, D = open_eligible_pairs(4)
 r, stu_a = login("student", A["email"], "Student@123")
 check("Student login", r.status_code == 200, f"HTTP {r.status_code}")
 
@@ -149,7 +149,7 @@ check("Placement-probability endpoint (backend -> ML service)", r.ok and isinsta
 closed = q("SELECT drive_id FROM drive WHERE status='Completed' LIMIT 1")[0]["drive_id"]
 r = requests.post(f"{API}/applications", json={"drive_id": closed}, headers=stu_b)
 check("Rule PL002: apply to a closed drive refused", r.status_code == 409, f"HTTP {r.status_code}")
-row = q("""SELECT drive_id FROM drive WHERE status IN ('Upcoming','Ongoing')
+row = q("""SELECT drive_id FROM drive WHERE status IN ('Upcoming','Ongoing') AND application_deadline >= CURRENT_DATE
            AND NOT fn_check_eligibility(%s, drive_id) LIMIT 1""", B["student_id"])
 if check("(found an ineligible open drive for the PL001 test)", bool(row)):
     r = requests.post(f"{API}/applications", json={"drive_id": row[0]["drive_id"]}, headers=stu_b)
@@ -183,6 +183,31 @@ check("NEW: Offer_Made -> Shortlisted (backwards) refused", code == "PL007", f"S
 check("...application statuses unchanged after the refused moves",
       q("SELECT status FROM application WHERE application_id=%s", app_c)[0]["status"] == "Rejected"
       and q("SELECT status FROM application WHERE application_id=%s", app_a)[0]["status"] == "Offer_Made", "")
+
+# --- Date integrity (PL008) ------------------------------------------------------
+# The admin moves an open drive's deadline to yesterday: a student who is
+# otherwise eligible must now be refused, both through the API and when the
+# row is written straight into the database.
+_, stu_d = login("student", D["email"], "Student@123")
+old_deadline = q("SELECT application_deadline FROM drive WHERE drive_id=%s", D["drive_id"])[0]["application_deadline"]
+r = requests.put(f"{API}/drives/{D['drive_id']}", headers=admin,
+                 # "Yesterday" by the database's clock: that is the clock the rule uses.
+                 json={"application_deadline": q("SELECT CURRENT_DATE - 1 AS d")[0]["d"].isoformat()})
+check("Admin moves a drive's application deadline to yesterday", r.ok, f"HTTP {r.status_code}")
+r = requests.post(f"{API}/applications", json={"drive_id": D["drive_id"]}, headers=stu_d)
+check("NEW: apply after the deadline refused (API)", r.status_code == 409,
+      f"HTTP {r.status_code}: {r.json().get('error')}")
+code = sql_error_code("INSERT INTO application (student_id, drive_id) VALUES (%s, %s)", D["student_id"], D["drive_id"])
+check("NEW: apply after the deadline refused by the trigger itself (raw SQL)", code == "PL008", f"SQLSTATE {code}")
+requests.put(f"{API}/drives/{D['drive_id']}", headers=admin, json={"application_deadline": old_deadline.isoformat()})
+code = sql_error_code("INSERT INTO application (student_id, drive_id, applied_at) VALUES (%s, %s, now() + interval '1 day')",
+                      D["student_id"], D["drive_id"])
+check("NEW: application dated in the future refused (raw SQL)", code == "PL008", f"SQLSTATE {code}")
+r = requests.put(f"{API}/drives/{D['drive_id']}", headers=admin,
+                 json={"application_deadline": "2999-01-01"})
+check("NEW: deadline after the drive date refused (CHECK constraint)", r.status_code == 400, f"HTTP {r.status_code}")
+check("...the student has no application to that drive after the refused attempts",
+      not q("SELECT 1 FROM application WHERE student_id=%s AND drive_id=%s", D["student_id"], D["drive_id"]), "")
 
 # --- Procedure + analytics ------------------------------------------------------
 drv = q("""SELECT d.drive_id, COUNT(a.*) AS pending FROM drive d LEFT JOIN application a ON a.drive_id = d.drive_id

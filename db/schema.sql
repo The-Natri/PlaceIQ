@@ -27,6 +27,18 @@
 --      the equivalent construct.
 -- =============================================================================
 
+-- The college's calendar is the clock that matters. An application deadline
+-- of 21 October means the end of 21 October in India, but the server (UTC in
+-- Docker) would otherwise still call it 21 October until 05:30 IST on the
+-- 22nd. Setting the database's time zone makes CURRENT_DATE, now() and the
+-- date of every applied_at follow the college's calendar. It applies to new
+-- connections, so it is set before anything else runs against this database.
+DO $$
+BEGIN
+    EXECUTE format('ALTER DATABASE %I SET timezone = %L', current_database(), 'Asia/Kolkata');
+END $$;
+SET timezone = 'Asia/Kolkata';
+
 
 -- =============================================================================
 -- SECTION 1: TABLES
@@ -129,6 +141,12 @@ CREATE TABLE drive (
     coordinator_id  INTEGER REFERENCES coordinator(coordinator_id),
     job_role        VARCHAR(100) NOT NULL,
     drive_date      DATE NOT NULL,
+    -- Last day a student may apply. A CHECK can relate it to drive_date
+    -- because both are on this row. The rule that an *application* is dated
+    -- on or before it compares two tables, so that one is a trigger
+    -- (trg_fn_application_guard, PL008).
+    application_deadline DATE NOT NULL,
+    CHECK (application_deadline <= drive_date),
     package_lpa     NUMERIC(6,2) NOT NULL CHECK (package_lpa > 0),
     min_cgpa        NUMERIC(4,2) NOT NULL DEFAULT 0 CHECK (min_cgpa BETWEEN 0 AND 10),
     max_backlogs    INTEGER NOT NULL DEFAULT 0 CHECK (max_backlogs >= 0),
@@ -381,6 +399,7 @@ RETURNS SETOF drive AS $$
     SELECT d.*
       FROM drive d
      WHERE d.status IN ('Upcoming', 'Ongoing')
+       AND d.application_deadline >= CURRENT_DATE  -- still accepting applications
        AND fn_check_eligibility(p_student_id, d.drive_id) = TRUE;
 $$ LANGUAGE sql STABLE;
 
@@ -460,6 +479,8 @@ GROUP BY dep.dept_id, dep.dept_name;
 --   PL005  drive is already closed (sp_close_drive) -> 409
 --   PL006  offer on an application not Selected     -> 409
 --   PL007  illegal application status transition    -> 409
+--   PL008  application dated after the drive's application deadline,
+--          or in the future                         -> 409
 -- =============================================================================
 
 -- Rule: you can only apply to an open drive you are eligible for.
@@ -469,8 +490,10 @@ CREATE OR REPLACE FUNCTION trg_fn_application_guard()
 RETURNS TRIGGER AS $$
 DECLARE
     v_drive_status drive.status%TYPE;
+    v_deadline     drive.application_deadline%TYPE;
 BEGIN
-    SELECT status INTO v_drive_status FROM drive WHERE drive_id = NEW.drive_id;
+    SELECT status, application_deadline INTO v_drive_status, v_deadline
+      FROM drive WHERE drive_id = NEW.drive_id;
 
     -- Nonexistent drive: let the drive_id foreign key reject it with its own
     -- error rather than misreporting it as "not eligible".
@@ -482,6 +505,22 @@ BEGIN
         RAISE EXCEPTION 'Drive % is % and no longer accepts applications',
             NEW.drive_id, v_drive_status
             USING ERRCODE = 'PL002';
+    END IF;
+
+    -- Date integrity. applied_at defaults to the current time, so through the
+    -- app this is simply "the deadline has passed". The checks use
+    -- NEW.applied_at rather than CURRENT_DATE so that a row written with an
+    -- explicit date (a seed, an import, a DBA) is held to the same rule.
+    -- This can't be a CHECK constraint: the deadline is on another table, and
+    -- "not in the future" depends on the clock, which a CHECK must not.
+    IF NEW.applied_at > CURRENT_TIMESTAMP THEN
+        RAISE EXCEPTION 'Application date % is in the future', NEW.applied_at
+            USING ERRCODE = 'PL008';
+    END IF;
+
+    IF NEW.applied_at::DATE > v_deadline THEN
+        RAISE EXCEPTION 'Applications for drive % closed on %', NEW.drive_id, v_deadline
+            USING ERRCODE = 'PL008';
     END IF;
 
     IF NOT fn_check_eligibility(NEW.student_id, NEW.drive_id) THEN
@@ -508,8 +547,8 @@ EXECUTE FUNCTION trg_fn_application_guard();
 -- offers for the same student at the same instant could each check, each
 -- see "no accepted offer yet", and both commit. Locking the student row
 -- forces the second transaction to wait until the first commits, and then
--- its check sees the first acceptance. (db/demos/concurrency_demo.py runs
--- exactly this race.)
+-- its check sees the first acceptance. (tests/transaction_evidence.py,
+-- scenario 4, runs exactly this race with two connections.)
 CREATE OR REPLACE FUNCTION trg_fn_offer_single_acceptance()
 RETURNS TRIGGER AS $$
 DECLARE

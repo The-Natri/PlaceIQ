@@ -101,6 +101,7 @@ export function AdminDriveDetail() {
       <Card title="Drive details">
         <dl className="kv">
           <div><dt>Status</dt><dd><StatusBadge status={d.status} /></dd></div>
+          <div><dt>Applications close</dt><dd>{formatDate(d.application_deadline)}</dd></div>
           <div><dt>Industry</dt><dd>{d.industry_sector || "—"}</dd></div>
           <div><dt>Minimum CGPA</dt><dd>{formatCgpa(d.min_cgpa)}</dd></div>
           <div><dt>Maximum backlogs</dt><dd>{d.max_backlogs}</dd></div>

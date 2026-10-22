@@ -8,7 +8,7 @@ import { DRIVE_TYPES } from "../../utils/status";
 import { toNumber } from "../../utils/format";
 
 const EMPTY = {
-  company_id: "", job_role: "", drive_date: "", package_lpa: "",
+  company_id: "", job_role: "", drive_date: "", application_deadline: "", package_lpa: "",
   min_cgpa: "", max_backlogs: "0", drive_type: "Full-Time", status: "Upcoming",
   eligible_dept_ids: [],
 };
@@ -23,6 +23,10 @@ function validate(form, isEdit) {
   if (!isEdit && !form.company_id) e.company_id = "Choose the company.";
   if (!form.job_role.trim()) e.job_role = "Job role is required.";
   if (!form.drive_date) e.drive_date = "Pick the drive date.";
+  // Mirrors the CHECK (application_deadline <= drive_date) on the table, so
+  // the mistake is caught before the request instead of as a 400.
+  if (form.application_deadline && form.drive_date && form.application_deadline > form.drive_date)
+    e.application_deadline = "The deadline must be on or before the drive date.";
   const pkg = Number(form.package_lpa);
   if (form.package_lpa === "" || !(pkg > 0)) e.package_lpa = "Package must be greater than 0.";
   const cgpa = Number(form.min_cgpa);
@@ -53,6 +57,7 @@ export function DriveFormModal({ open, onClose, drive, companies, departments, o
             company_id: String(drive.company_id),
             job_role: drive.job_role,
             drive_date: drive.drive_date?.slice(0, 10) || "",
+            application_deadline: drive.application_deadline?.slice(0, 10) || "",
             package_lpa: String(toNumber(drive.package_lpa) ?? ""),
             min_cgpa: String(toNumber(drive.min_cgpa) ?? ""),
             max_backlogs: String(drive.max_backlogs),
@@ -82,6 +87,8 @@ export function DriveFormModal({ open, onClose, drive, companies, departments, o
     const payload = {
       job_role: form.job_role.trim(),
       drive_date: form.drive_date,
+      // Left empty on a new drive, the backend closes applications on the drive date.
+      application_deadline: form.application_deadline || (isEdit ? form.drive_date : undefined),
       package_lpa: Number(form.package_lpa),
       min_cgpa: Number(form.min_cgpa),
       max_backlogs: Number(form.max_backlogs),
@@ -138,6 +145,10 @@ export function DriveFormModal({ open, onClose, drive, companies, departments, o
         </Field>
         <Field id="drive-date" label="Drive date" error={errors.drive_date} required>
           <input type="date" value={form.drive_date} onChange={set("drive_date")} />
+        </Field>
+        <Field id="drive-deadline" label="Application deadline" error={errors.application_deadline}
+          hint="Last day to apply. Leave empty to close applications on the drive date.">
+          <input type="date" value={form.application_deadline} max={form.drive_date || undefined} onChange={set("application_deadline")} />
         </Field>
         <Field id="drive-package" label="Package (LPA)" error={errors.package_lpa} required>
           <input type="number" step="0.01" min="0" value={form.package_lpa} onChange={set("package_lpa")} />

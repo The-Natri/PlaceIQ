@@ -17,6 +17,7 @@ BUSINESS_RULE_HTTP_STATUS = {
     "PL005": 409,  # drive is already closed
     "PL006": 409,  # offer on an application that isn't Selected
     "PL007": 409,  # illegal application status transition
+    "PL008": 409,  # application after the drive's deadline (or dated in the future)
 }
 
 

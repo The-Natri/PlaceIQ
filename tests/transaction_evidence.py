@@ -73,7 +73,7 @@ def fresh_offer(admin, package):
     s = q("""
         SELECT DISTINCT ON (s.student_id) s.student_id, s.name, s.email, d.drive_id
           FROM student s CROSS JOIN drive d
-         WHERE s.placement_status = 'Not Placed' AND d.status IN ('Upcoming', 'Ongoing')
+         WHERE s.placement_status = 'Not Placed' AND d.status IN ('Upcoming', 'Ongoing') AND d.application_deadline >= CURRENT_DATE
            AND fn_check_eligibility(s.student_id, d.drive_id)
            AND NOT EXISTS (SELECT 1 FROM application a WHERE a.student_id = s.student_id AND a.drive_id = d.drive_id)
          ORDER BY s.student_id, d.drive_id LIMIT 1""")[0]
@@ -145,7 +145,7 @@ print("```text")
 sid, stu, offer_1 = fresh_offer(admin, 10.0)
 app_2 = q("""
     SELECT d.drive_id FROM drive d
-     WHERE d.status IN ('Upcoming', 'Ongoing') AND fn_check_eligibility(%s, d.drive_id)
+     WHERE d.status IN ('Upcoming', 'Ongoing') AND d.application_deadline >= CURRENT_DATE AND fn_check_eligibility(%s, d.drive_id)
        AND NOT EXISTS (SELECT 1 FROM application a WHERE a.student_id = %s AND a.drive_id = d.drive_id)
      ORDER BY d.drive_id LIMIT 1""", sid, sid)[0]["drive_id"]
 app_2 = call("POST", "/applications", stu, {"drive_id": app_2}, show=False).json()["application_id"]

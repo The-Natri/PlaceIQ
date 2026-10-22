@@ -14,7 +14,7 @@ It writes data, so `tests/run_smoke_test.sh` runs it against a throwaway copy:
 The live `placement_db` is not touched.
 
 This run used the final schema, including the corrected
-`placement_timeline_view`. **Result: 41 / 41 passed.**
+`placement_timeline_view` and the date-integrity rule (PL008). **Result: 47 / 47 passed.**
 
 Unedited output of `bash tests/run_smoke_test.sh` (also in
 `raw/smoke-test-output.txt`):
@@ -56,6 +56,12 @@ PASS | NEW: Rejected -> Applied refused (API)                                   
 PASS | NEW: Rejected -> Applied refused by the trigger itself (raw SQL)                         | SQLSTATE PL007
 PASS | NEW: Offer_Made -> Shortlisted (backwards) refused                                       | SQLSTATE PL007
 PASS | ...application statuses unchanged after the refused moves                                | 
+PASS | Admin moves a drive's application deadline to yesterday                                  | HTTP 200
+PASS | NEW: apply after the deadline refused (API)                                              | HTTP 409: Applications for drive 24 closed on 2026-10-21
+PASS | NEW: apply after the deadline refused by the trigger itself (raw SQL)                    | SQLSTATE PL008
+PASS | NEW: application dated in the future refused (raw SQL)                                   | SQLSTATE PL008
+PASS | NEW: deadline after the drive date refused (CHECK constraint)                            | HTTP 400
+PASS | ...the student has no application to that drive after the refused attempts               | 
 PASS | Procedure sp_close_drive via API                                                         | HTTP 200, rejected 37 of 37 pending
 PASS | GET /analytics/overview                                                                  | HTTP 200
 PASS | GET /analytics/department-stats                                                          | HTTP 200
@@ -68,5 +74,5 @@ PASS | GET /analytics/company-dept-matrix                                       
 PASS | CORS: frontend origin http://localhost:5173 allowed                                      | Access-Control-Allow-Origin=http://localhost:5173
 PASS | CORS: unknown origin http://evil.example not allowed                                     | Access-Control-Allow-Origin=None
 
-TOTAL: 41/41 passed
+TOTAL: 47/47 passed
 ```

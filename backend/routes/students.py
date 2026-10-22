@@ -124,12 +124,12 @@ def eligible_drives(student_id):
     with get_cursor() as cur:
         cur.execute(
             """
-            SELECT d.drive_id, d.job_role, d.drive_date, d.package_lpa,
+            SELECT d.drive_id, d.job_role, d.drive_date, d.application_deadline, d.package_lpa,
                    d.min_cgpa, d.max_backlogs, d.drive_type, d.status,
                    c.company_name
             FROM fn_get_eligible_drives(%s) d
             JOIN company c ON c.company_id = d.company_id
-            ORDER BY d.drive_date
+            ORDER BY d.application_deadline, d.drive_date  -- closing soonest first
             """,
             (student_id,),
         )

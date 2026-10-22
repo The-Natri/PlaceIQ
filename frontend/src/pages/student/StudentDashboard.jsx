@@ -159,6 +159,7 @@ export function StudentDashboard() {
             emptyMessage={search ? "Try a different company or role." : "New drives appear here when you meet their criteria."}
             columns={[
               { key: "company", header: "Company", render: (d) => <CompanyCell name={d.company_name} sub={d.job_role} /> },
+              { key: "deadline", header: "Apply by", render: (d) => <span className="nowrap">{formatDate(d.application_deadline)}</span> },
               { key: "date", header: "Drive date", render: (d) => <span className="nowrap">{formatDate(d.drive_date)}</span> },
               { key: "package", header: "Package", className: "num", render: (d) => formatLpa(d.package_lpa) },
               { key: "criteria", header: "Criteria", render: (d) => <span className="cell-sub">CGPA ≥ {formatCgpa(d.min_cgpa)} · ≤ {d.max_backlogs} backlogs</span> },

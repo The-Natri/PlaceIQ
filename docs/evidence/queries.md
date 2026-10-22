@@ -4,7 +4,7 @@ Every view, the materialized view, both stored functions and the stored procedur
 run against the seeded database. These are the queries behind the analytics page
 and the student dashboard.
 
-_Generated 2026-10-21 20:06 by `docs/evidence/scripts/build_sql_evidence.py` against the live `placement_db` (freshly seeded). Output blocks are unedited psql output._
+_Generated 2026-10-22 05:28 by `docs/evidence/scripts/build_sql_evidence.py` against the live `placement_db` (freshly seeded). Output blocks are unedited psql output._
 
 ## Placement % per department (`department_stats_view`)
 
@@ -70,16 +70,16 @@ One row per offer with the student, department and company joined in. The first 
 SELECT * FROM placed_students_view ORDER BY offered_package_lpa DESC LIMIT 10;
  student_id |   reg_no    |       name       |            dept_name            |   company_name    | offered_package_lpa | offer_date | offer_status 
 ------------+-------------+------------------+---------------------------------+-------------------+---------------------+------------+--------------
-         37 | ISE2024007  | Arjun Joshi      | Information Science Engineering | Vertex Analytics  |               23.93 | 2025-11-07 | Declined
-         44 | ISE2023014  | Aditya Pillai    | Information Science Engineering | Vertex Analytics  |               23.25 | 2025-11-07 | Accepted
-         69 | ECE2024009  | Varun Joshi      | Electronics & Communication     | Vertex Analytics  |               22.10 | 2025-11-07 | Pending
-         52 | ISE2024022  | Tanvi Chatterjee | Information Science Engineering | Vertex Analytics  |               22.03 | 2025-11-07 | Pending
-         51 | ISE2023021  | Naveen Menon     | Information Science Engineering | Orbital Fintech   |               21.83 | 2025-11-03 | Accepted
-         37 | ISE2024007  | Arjun Joshi      | Information Science Engineering | Orbital Fintech   |               21.10 | 2025-11-03 | Accepted
-         52 | ISE2024022  | Tanvi Chatterjee | Information Science Engineering | Orbital Fintech   |               18.59 | 2025-10-23 | Pending
-         15 | CSE2023015  | Aarav Chatterjee | Computer Science Engineering    | Bluepeak Software |               15.62 | 2026-02-18 | Declined
-         14 | CSE2022014  | Rohan Mishra     | Computer Science Engineering    | Bluepeak Software |               15.58 | 2026-02-18 | Pending
-        152 | AIML2023002 | Sneha Krishnan   | Artificial Intelligence & ML    | Bluepeak Software |               14.88 | 2026-02-05 | Pending
+         37 | ISE2024007  | Arjun Joshi      | Information Science Engineering | Vertex Analytics  |               23.93 | 2026-06-25 | Declined
+         44 | ISE2023014  | Aditya Pillai    | Information Science Engineering | Vertex Analytics  |               23.25 | 2026-06-25 | Accepted
+         69 | ECE2024009  | Varun Joshi      | Electronics & Communication     | Vertex Analytics  |               22.10 | 2026-06-25 | Pending
+         52 | ISE2024022  | Tanvi Chatterjee | Information Science Engineering | Vertex Analytics  |               22.03 | 2026-06-25 | Pending
+         51 | ISE2023021  | Naveen Menon     | Information Science Engineering | Orbital Fintech   |               21.83 | 2026-06-29 | Accepted
+         37 | ISE2024007  | Arjun Joshi      | Information Science Engineering | Orbital Fintech   |               21.10 | 2026-06-29 | Accepted
+         52 | ISE2024022  | Tanvi Chatterjee | Information Science Engineering | Orbital Fintech   |               18.59 | 2026-07-08 | Pending
+         15 | CSE2023015  | Aarav Chatterjee | Computer Science Engineering    | Bluepeak Software |               15.62 | 2026-09-10 | Declined
+         14 | CSE2022014  | Rohan Mishra     | Computer Science Engineering    | Bluepeak Software |               15.58 | 2026-09-10 | Pending
+        152 | AIML2023002 | Sneha Krishnan   | Artificial Intelligence & ML    | Bluepeak Software |               14.88 | 2026-09-21 | Pending
 (10 rows)
 
 SELECT offer_status, COUNT(*) AS offers FROM placed_students_view GROUP BY offer_status ORDER BY offer_status;
@@ -158,14 +158,12 @@ SELECT dept_name, rank_in_dept, name, company_name, offered_package_lpa
 SELECT * FROM placement_timeline_view ORDER BY month;
    month    | offers_in_month | cumulative_offers | change_from_prev_month 
 ------------+-----------------+-------------------+------------------------
- 2025-08-01 |               3 |                 3 |                 (null)
- 2025-09-01 |               7 |                10 |                      4
- 2025-10-01 |               1 |                11 |                     -6
- 2025-11-01 |              36 |                47 |                     35
- 2025-12-01 |             114 |               161 |                     78
- 2026-01-01 |               0 |               161 |                   -114
- 2026-02-01 |              16 |               177 |                     16
-(7 rows)
+ 2026-05-01 |             114 |               114 |                 (null)
+ 2026-06-01 |              36 |               150 |                    -78
+ 2026-07-01 |               1 |               151 |                    -35
+ 2026-08-01 |               7 |               158 |                      6
+ 2026-09-01 |              19 |               177 |                     12
+(5 rows)
 ```
 
 ## CGPA standing within department (`student_cgpa_standing_view`)
@@ -218,17 +216,17 @@ SELECT company_name, dept_name, offers_count, avg_package_lpa
 (10 rows)
 
 SELECT MAX(refreshed_at) AS refreshed_at FROM mv_company_dept_placements;
-         refreshed_at          
--------------------------------
- 2026-10-21 14:35:47.835456+00
+          refreshed_at           
+---------------------------------
+ 2026-10-22 05:28:14.83657+05:30
 (1 row)
 
 REFRESH MATERIALIZED VIEW CONCURRENTLY mv_company_dept_placements;
 REFRESH MATERIALIZED VIEW
 SELECT MAX(refreshed_at) AS refreshed_at FROM mv_company_dept_placements;
-         refreshed_at          
--------------------------------
- 2026-10-21 14:36:17.559887+00
+          refreshed_at           
+---------------------------------
+ 2026-10-22 05:28:28.16347+05:30
 (1 row)
 ```
 
@@ -290,13 +288,13 @@ SELECT e.drive_id, c.company_name, e.job_role, e.min_cgpa, e.max_backlogs, e.sta
  ORDER BY e.drive_date;
  drive_id |      company_name      |       job_role       | min_cgpa | max_backlogs |  status  
 ----------+------------------------+----------------------+----------+--------------+----------
+        3 | Vertex Analytics       | ML Engineer          |     8.03 |            0 | Ongoing
+       15 | Meridian Consulting    | Software Engineer    |     7.17 |            1 | Ongoing
        24 | Brightwave BPO         | Full Stack Developer |     6.26 |            2 | Ongoing
        13 | Ironclad Manufacturing | Core Engineer        |     7.45 |            1 | Ongoing
-        3 | Vertex Analytics       | ML Engineer          |     8.03 |            0 | Ongoing
        11 | Aster Technologies     | Backend Developer    |     7.18 |            1 | Ongoing
        10 | Crestline Systems      | Data Analyst         |     7.38 |            1 | Upcoming
         1 | Nimbus Cloud Systems   | Backend Developer    |     8.25 |            0 | Upcoming
-       15 | Meridian Consulting    | Software Engineer    |     7.17 |            1 | Ongoing
         6 | Quantara Labs          | QA Engineer          |     8.41 |            0 | Upcoming
 (8 rows)
 ```

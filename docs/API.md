@@ -193,11 +193,11 @@ Full profile, skills, and where the student's CGPA stands in their department (f
   ```
 
 ### `GET /api/students/:id/eligible-drives`
-Open drives (Upcoming or Ongoing) this student is eligible for, computed by the database function `fn_get_eligible_drives`.
+Open drives (Upcoming or Ongoing, application deadline not yet passed) this student is eligible for, computed by the database function `fn_get_eligible_drives`. Sorted by deadline, soonest first.
 - **Auth:** Self or admin
 - **Request:** none
 - **Success:** `200` (a list)
-- **Response fields:** `company_name`, `drive_date`, `drive_id`, `drive_type`, `job_role`, `max_backlogs`, `min_cgpa`, `package_lpa`, `status`
+- **Response fields:** `application_deadline`, `company_name`, `drive_date`, `drive_id`, `drive_type`, `job_role`, `max_backlogs`, `min_cgpa`, `package_lpa`, `status`
 - **Errors:** `401` missing or invalid token; `403` another student's record
 - **Example:**
   ```bash
@@ -238,7 +238,7 @@ All drives, newest first.
 - **Auth:** Any logged-in user
 - **Request:** optional query parameter `status` (`Upcoming`, `Ongoing`, `Completed`, `Cancelled`)
 - **Success:** `200` (a list)
-- **Response fields:** `company_id`, `company_name`, `drive_date`, `drive_id`, `drive_type`, `job_role`, `max_backlogs`, `min_cgpa`, `package_lpa`, `status`
+- **Response fields:** `application_deadline`, `company_id`, `company_name`, `drive_date`, `drive_id`, `drive_type`, `job_role`, `max_backlogs`, `min_cgpa`, `package_lpa`, `status`
 - **Errors:** `401` missing or invalid token
 - **Example:**
   ```bash
@@ -250,7 +250,7 @@ One drive with the departments it is restricted to.
 - **Auth:** Any logged-in user
 - **Request:** none
 - **Success:** `200`
-- **Response fields:** `company_id`, `company_name`, `created_at`, `drive_date`, `drive_id`, `drive_type`, `eligible_departments`, `industry_sector`, `job_role`, `max_backlogs`, `min_cgpa`, `package_lpa`, `status`
+- **Response fields:** `application_deadline`, `company_id`, `company_name`, `created_at`, `drive_date`, `drive_id`, `drive_type`, `eligible_departments`, `industry_sector`, `job_role`, `max_backlogs`, `min_cgpa`, `package_lpa`, `status`
 - **Nested:** `eligible_departments` items have dept_id, dept_name, dept_code. **An empty list means the drive is open to all departments.**
 - **Errors:** `401` missing or invalid token; `404` no such drive
 - **Example:**
@@ -261,7 +261,7 @@ One drive with the departments it is restricted to.
 ### `POST /api/drives`
 Creates a drive and its department restrictions in one transaction.
 - **Auth:** Admin
-- **Request:** required `company_id`, `job_role`, `drive_date` (YYYY-MM-DD), `package_lpa`, `min_cgpa`, `max_backlogs`; optional `drive_type` (`Full-Time` default, or `Internship`), `status` (`Upcoming` default), `eligible_dept_ids` (list; empty or omitted = open to all)
+- **Request:** required `company_id`, `job_role`, `drive_date` (YYYY-MM-DD), `package_lpa`, `min_cgpa`, `max_backlogs`; optional `application_deadline` (YYYY-MM-DD, on or before `drive_date`; omitted = the drive date), `drive_type` (`Full-Time` default, or `Internship`), `status` (`Upcoming` default), `eligible_dept_ids` (list; empty or omitted = open to all)
 - **Success:** `201`
 - **Response fields:** `drive_id`
 - **Errors:** `400` missing field, unknown company or department, or out-of-range value; `401` missing or invalid token; `403` not an admin
@@ -273,7 +273,7 @@ Creates a drive and its department restrictions in one transaction.
 ### `PUT /api/drives/:id`
 Edits a drive. Send only what changes. Sending `eligible_dept_ids` replaces the whole restriction list (`[]` = open to all).
 - **Auth:** Admin
-- **Request:** any of `job_role`, `drive_date`, `package_lpa`, `min_cgpa`, `max_backlogs`, `drive_type`, `status`, `eligible_dept_ids`
+- **Request:** any of `job_role`, `drive_date`, `application_deadline`, `package_lpa`, `min_cgpa`, `max_backlogs`, `drive_type`, `status`, `eligible_dept_ids`
 - **Success:** `200`
 - **Response fields:** `drive_id`, `updated`
 - **Errors:** `400` no editable field sent, or an invalid value or department; `401` missing or invalid token; `403` not an admin; `404` no such drive
@@ -321,12 +321,12 @@ Status moves only forward (enforced by a database trigger; an illegal move retur
 | Offer_Made, Rejected | final |
 
 ### `POST /api/applications`
-The logged-in student applies to a drive. The database checks eligibility and that the drive is open.
+The logged-in student applies to a drive. The database checks eligibility, that the drive is open, and that its application deadline has not passed.
 - **Auth:** Student
 - **Request:** `drive_id`
 - **Success:** `201`
 - **Response fields:** `application_id`, `applied_at`, `status`
-- **Errors:** `400` drive_id missing or unknown; `401` missing or invalid token; `403` not eligible for this drive (or not a student token); `409` already applied, or the drive is Completed or Cancelled
+- **Errors:** `400` drive_id missing or unknown; `401` missing or invalid token; `403` not eligible for this drive (or not a student token); `409` already applied, the drive is Completed or Cancelled, or its application deadline has passed
 - **Example:**
   ```bash
   curl -s -X POST $API/applications -H "Authorization: Bearer $STUDENT_TOKEN" -H "Content-Type: application/json" -d '{"drive_id":24}'
