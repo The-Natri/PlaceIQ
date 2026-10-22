@@ -2,7 +2,7 @@
 
 Covers the final round (release Phases 1–6), 22 Oct 2026, on the branch
 **`release`**. `release` was created from `frontend-polish` with `main` merged in.
-There were no conflicts, and nothing was rewritten or force-pushed.
+There were no conflicts, and nothing was rewritten or force-pushed. Pushed to origin; PR #2 merges `release` into `main`.
 Everything below is based on real command output kept in `docs/evidence/`.
 The earlier rounds are summarised at the end.
 
@@ -28,7 +28,7 @@ Demo logins (local only; replaced in public mode):
 | 3. Desktop app | `e3dd086` | `desktop/`: an Electron launcher that checks Docker (message + Retry), runs `compose up`, shows a loading screen until `/api/health` answers, opens the app and runs `compose down` on quit. Packaged as `desktop/dist/PlaceIQ-1.0.0-portable.exe` (electron-builder, free, unsigned). | Packaged app **8/8**: stack up in 16 s, student and admin signed in, **no containers or processes left** after quit. Portable .exe: healthy in 25 s, clean on close. A JWT secret was generated into the volume (mode 600). |
 | 4. Public link | `0c911a2` | `scripts/share.ps1`/`.sh`: public mode plus a Cloudflare quick tunnel (cloudflared from the official GitHub release, after a prompt; the binary is checked to run). In public mode, secrets and passwords come from the git-ignored `.env.public` (generated, never printed), demo passwords are replaced, and login/signup are rate-limited (10 per 5 min per visitor). `DEPLOY_FREE.md`: Render + Neon steps with their limits (not run). | Through the public link: demo password **refused (401)**; browser check **12/12**; 8th rapid wrong login → **429**; after `-Stop` the link gives **530** and nothing is left. |
 | 5. Docs and report | (this commit) | Screenshots retaken from real runs. README (three ways to run, share, deploy), `docs/API.md`, ER diagram + PNG, normalization, Oracle differences, viva cheat sheet and evidence index updated. Report: PL008, a date-integrity result, a new **2.9 Deployment** subsection, the date limitation removed, 4 new references (all URLs checked). | API contract **161/161**. Transaction evidence: 4/4 scenarios. Report PDF: 34 pages inspected; every figure/table reference matches its caption; no stale text. |
-| 6. Push | (filled in after pushing) | | |
+| 6. Push | (this commit) | Secret scan: `.env`, `.env.public` and `frontend/.env` were never committed; the 5 secret values (2 JWT secrets in the env files, 1 in the Docker volume, 2 public passwords) appear in no file and no commit; no credential patterns in history. Pushed `main` (`1b22556..f5d7ed6`, fast-forward) and `release` (new branch); nothing force-pushed. Repo left **public** (you chose NO). **firetruckss invited with write access** (they must accept: https://github.com/The-Natri/PlaceIQ/invitations). PR: **https://github.com/The-Natri/PlaceIQ/pull/2** (release → main). | `git push` output; `gh api` invitation (permissions: write) |
 
 ### Found and fixed along the way
 
