@@ -1,0 +1,15 @@
+# Keep the build context small and free of secrets and local state.
+.git
+**/node_modules
+**/.venv*
+**/__pycache__
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+frontend/dist
+db/backups
+docs
+desktop
+ml-service
+.run

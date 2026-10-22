@@ -49,7 +49,8 @@ PASS | GET /analytics/cgpa-vs-outcome                                           
 PASS | GET /analytics/top-offers-per-dept                                                       | HTTP 200
 PASS | GET /analytics/placement-timeline                                                        | HTTP 200
 PASS | GET /analytics/company-dept-matrix                                                       | HTTP 200
-PASS | CORS: frontend origin http://localhost:5173 allowed                                      | Access-Control-Allow-Origin=http://localhost:5173
-PASS | CORS: unknown origin http://evil.example not allowed                                     | Access-Control-Allow-Origin=None
+PASS | CORS closed: cross-origin http://localhost:5173 gets no Access-Control-Allow-Origin      | Access-Control-Allow-Origin=None
+PASS | CORS closed: cross-origin http://evil.example gets no Access-Control-Allow-Origin        | Access-Control-Allow-Origin=None
+PASS | Unknown API path is a JSON 404 (not the HTML page)                                       | HTTP 404, application/json
 
-TOTAL: 47/47 passed
+TOTAL: 48/48 passed

@@ -56,6 +56,19 @@ def predict():
 
 
 if __name__ == "__main__":
+    # The process id for stop.sh, written by the server itself (see
+    # backend/serve.py, write_pidfile, for why).
+    if os.environ.get("PLACEIQ_PIDFILE"):
+        with open(os.environ["PLACEIQ_PIDFILE"], "w") as f:
+            f.write(str(os.getpid()))
     get_model()  # fail fast / train immediately on startup rather than on first request
-    # Debugger off unless FLASK_DEBUG=1 (same reasoning as backend/config.py).
-    app.run(port=6000, debug=os.environ.get("FLASK_DEBUG", "0") == "1")
+    # Internal service: only the backend calls it, so it listens on
+    # 127.0.0.1 unless ML_HOST says otherwise (Docker sets 0.0.0.0 inside the
+    # private compose network, and publishes no port for it). Served by
+    # waitress, a production server, for the same reasons as backend/serve.py.
+    from waitress import serve
+
+    host = os.environ.get("ML_HOST", "127.0.0.1")
+    port = int(os.environ.get("ML_PORT", "6000"))
+    print(f"ML service listening on {host}:{port} (internal)", flush=True)
+    serve(app, host=host, port=port, threads=4)

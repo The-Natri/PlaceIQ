@@ -1,3 +1,14 @@
+# PlaceIQ: everything at http://localhost:8080 with one command.
+#
+#   docker compose up -d --build     start (first run: builds the images,
+#                                    applies the schema, loads the synthetic
+#                                    data, trains the model)
+#   docker compose down              stop (data is kept in the volumes)
+#
+# Three services on a private network. Only "app" publishes a port, and only
+# on 127.0.0.1, so nothing outside this machine can reach it unless you share
+# it on purpose (scripts/share.ps1). The database and the ML service are
+# reachable only by the app.
 services:
   db:
     image: postgres:16
@@ -5,17 +16,65 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: placement_admin
-      POSTGRES_PASSWORD: placement_dev_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-placement_dev_password}
       POSTGRES_DB: placement_db
-    ports:
-      - "5432:5432"
     volumes:
       - placement_db_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U placement_admin -d placement_db"]
       interval: 5s
       timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    image: placeiq-app
+    container_name: placeiq_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://placement_admin:${POSTGRES_PASSWORD:-placement_dev_password}@db:5432/placement_db
+      ML_SERVICE_URL: http://ml:6000
+      # Empty: the entrypoint generates one into the app_data volume.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      PUBLIC_MODE: ${PUBLIC_MODE:-0}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - app_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
       retries: 10
+      # The first start also loads the synthetic dataset (1-3 minutes).
+      start_period: 600s
+
+  ml:
+    build: ./ml-service
+    image: placeiq-ml
+    container_name: placeiq_ml
+    restart: unless-stopped
+    # Trains from the database on first start, so it waits until the app has
+    # loaded the data (the app is healthy only after that).
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://placement_admin:${POSTGRES_PASSWORD:-placement_dev_password}@db:5432/placement_db
+    volumes:
+      - ml_model:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:6000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 300s
 
 volumes:
   placement_db_data:
+  app_data:
+  ml_model:

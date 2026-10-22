@@ -14,7 +14,7 @@ It writes data, so `tests/run_smoke_test.sh` runs it against a throwaway copy:
 The live `placement_db` is not touched.
 
 This run used the final schema, including the corrected
-`placement_timeline_view` and the date-integrity rule (PL008). **Result: 47 / 47 passed.**
+`placement_timeline_view` and the date-integrity rule (PL008). **Result: 48 / 48 passed.** The backend under test is the production server (waitress, `backend/serve.py`), with CORS closed.
 
 Unedited output of `bash tests/run_smoke_test.sh` (also in
 `raw/smoke-test-output.txt`):
@@ -71,8 +71,9 @@ PASS | GET /analytics/cgpa-vs-outcome                                           
 PASS | GET /analytics/top-offers-per-dept                                                       | HTTP 200
 PASS | GET /analytics/placement-timeline                                                        | HTTP 200
 PASS | GET /analytics/company-dept-matrix                                                       | HTTP 200
-PASS | CORS: frontend origin http://localhost:5173 allowed                                      | Access-Control-Allow-Origin=http://localhost:5173
-PASS | CORS: unknown origin http://evil.example not allowed                                     | Access-Control-Allow-Origin=None
+PASS | CORS closed: cross-origin http://localhost:5173 gets no Access-Control-Allow-Origin      | Access-Control-Allow-Origin=None
+PASS | CORS closed: cross-origin http://evil.example gets no Access-Control-Allow-Origin        | Access-Control-Allow-Origin=None
+PASS | Unknown API path is a JSON 404 (not the HTML page)                                       | HTTP 404, application/json
 
-TOTAL: 47/47 passed
+TOTAL: 48/48 passed
 ```

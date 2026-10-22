@@ -7,15 +7,18 @@ with design tokens, and charts as small SVG components.
 
 ```bash
 npm install          # again after every pull: teammates may add packages
-cp .env.example .env # VITE_API_URL = the backend, default http://localhost:5000/api
-npm run dev          # http://localhost:5173
-npm run build        # production build; must pass before committing
+npm run build        # production build into dist/; must pass before committing
 npx oxlint src       # lint
 ```
 
-The backend only accepts browser calls from origins listed in
-`FRONTEND_ORIGINS` in the repo-root `.env`. If you serve the frontend
-somewhere other than `localhost:5173`, add that address there.
+The backend serves the built app and the API from **one origin**:
+`http://localhost:8080` (see the main README for `docker compose up` or
+`start.ps1`). The app calls the API at the relative path `/api`, so no URL
+has to be configured and no CORS is needed.
+
+For live editing, run the backend on port 8080, then `npm run dev`
+(http://localhost:5173). Vite forwards `/api` to the backend
+(`vite.config.js`), so the browser still sees a single origin.
 
 ## Where things live
 

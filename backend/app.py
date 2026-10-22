@@ -4,9 +4,11 @@ module-level `app = Flask(...)` so tests can spin up isolated instances
 later without import-order headaches.
 """
 import datetime
+import os
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask.json.provider import DefaultJSONProvider
+from werkzeug.security import safe_join
 from flask_cors import CORS
 
 import db
@@ -38,14 +40,23 @@ class ISODateJSONProvider(DefaultJSONProvider):
 
 
 def create_app():
-    app = Flask(__name__)
+    if not Config.JWT_SECRET_KEY:
+        raise RuntimeError(
+            "JWT_SECRET_KEY is not set. Run start.ps1 / start.sh (or docker compose up), "
+            "which generate one into a git-ignored file, or set it in .env."
+        )
+
+    # static_folder=None: the built frontend is served by spa() below, which
+    # also handles client-side routes. Flask's default /static would not.
+    app = Flask(__name__, static_folder=None)
     app.config.from_object(Config)
     app.json = ISODateJSONProvider(app)
 
-    # The frontend runs on a different origin (Vite, port 5173) than the API
-    # (port 5000), so the browser needs CORS — but only for the configured
-    # frontend origin(s), not for any site on the internet.
-    CORS(app, resources={r"/api/*": {"origins": Config.FRONTEND_ORIGINS}})
+    # The UI is served from this same origin, so the browser needs no CORS.
+    # Only if FRONTEND_ORIGINS is configured (a frontend hosted elsewhere) is
+    # the API opened to those origins, and to nothing else.
+    if Config.FRONTEND_ORIGINS:
+        CORS(app, resources={r"/api/*": {"origins": Config.FRONTEND_ORIGINS}})
 
     db.init_pool()
 
@@ -66,9 +77,41 @@ def create_app():
             cur.fetchone()
         return jsonify({"status": "ok"})
 
+    @app.route("/api/<path:_>", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+    def api_not_found(_):
+        """An unknown API path is a JSON 404, never the HTML page below."""
+        return jsonify({"error": "Not found"}), 404
+
+    dist = os.path.abspath(Config.FRONTEND_DIST)
+
+    @app.get("/", defaults={"path": ""})
+    @app.get("/<path:path>")
+    def spa(path):
+        """
+        Serves the built React app. A path that is a real file (a script,
+        a stylesheet, the favicon) is sent as-is. Anything else is a
+        client-side route like /admin/drives/24, so it gets index.html and
+        React Router renders the right page. That is what makes refreshing
+        the browser on any page work.
+        """
+        index = os.path.join(dist, "index.html")
+        if not os.path.isfile(index):
+            return jsonify({"error": f"Frontend not built: {index} is missing. Run npm run build in frontend/."}), 503
+        # safe_join returns None for anything that escapes dist (../.env),
+        # so such a path is never even looked at on disk.
+        requested = safe_join(dist, path) if path else None
+        if requested and os.path.isfile(requested):
+            # Vite names built assets by content hash, so they can be cached for good.
+            max_age = 31536000 if path.startswith("assets/") else 0
+            return send_from_directory(dist, path, max_age=max_age)
+        response = send_from_directory(dist, "index.html", max_age=0)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
     return app
 
 
 if __name__ == "__main__":
-    application = create_app()
-    application.run(debug=Config.DEBUG, port=5000)
+    # The production server. See serve.py.
+    import serve
+    serve.main()

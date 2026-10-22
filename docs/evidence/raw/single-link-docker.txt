@@ -1,0 +1,15 @@
+PASS | Login page served at /login                                                                  | HTTP 200
+PASS | API on the same origin: GET /api/health                                                      | HTTP 200 {"status":"ok"}
+
+PASS | Student signs in and sees the dashboard                                                      | http://localhost:8080/student
+PASS | Placement probability shown (backend -> internal ML service)                                 | 6%
+PASS | Student applies to an eligible drive                                                         | Brightwave BPO
+PASS | Refresh on a deep link (/student?tab=applications) keeps the page and shows the application  | Brightwave BPO
+PASS | Admin signs in and sees the drive list                                                       | 25 drives
+PASS | Refresh on a deep link (/admin/drives/6) loads the drive detail                              | 
+PASS | Analytics (timeline) loads by direct URL                                                     | 
+PASS | Unknown /api path is a JSON 404                                                              | HTTP 404
+PASS | Browser contacted no other origin or port                                                    | only http://localhost:8080
+PASS | No console or page errors                                                                    | 
+
+TOTAL: 12/12 passed  (http://localhost:8080)

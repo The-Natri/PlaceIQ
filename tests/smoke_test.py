@@ -223,15 +223,16 @@ for path in ["/analytics/overview", "/analytics/department-stats", "/analytics/c
     r = requests.get(f"{API}{path}", headers=admin)
     check(f"GET {path}", r.ok, f"HTTP {r.status_code}")
 
-# --- CORS: only the configured frontend origin may call the API --------------------
-r = requests.get(f"{API}/health", headers={"Origin": "http://localhost:5173"})
-check("CORS: frontend origin http://localhost:5173 allowed",
-      r.headers.get("Access-Control-Allow-Origin") == "http://localhost:5173",
-      f"Access-Control-Allow-Origin={r.headers.get('Access-Control-Allow-Origin')}")
-r = requests.get(f"{API}/health", headers={"Origin": "http://evil.example"})
-check("CORS: unknown origin http://evil.example not allowed",
-      "Access-Control-Allow-Origin" not in r.headers,
-      f"Access-Control-Allow-Origin={r.headers.get('Access-Control-Allow-Origin')}")
+# --- Single origin: the UI and the API are served together, so CORS is closed ---
+for origin in ("http://localhost:5173", "http://evil.example"):
+    r = requests.get(f"{API}/health", headers={"Origin": origin})
+    check(f"CORS closed: cross-origin {origin} gets no Access-Control-Allow-Origin",
+          "Access-Control-Allow-Origin" not in r.headers,
+          f"Access-Control-Allow-Origin={r.headers.get('Access-Control-Allow-Origin')}")
+r = requests.get(f"{API}/no-such-endpoint")
+check("Unknown API path is a JSON 404 (not the HTML page)",
+      r.status_code == 404 and r.headers.get("Content-Type", "").startswith("application/json"),
+      f"HTTP {r.status_code}, {r.headers.get('Content-Type')}")
 
 # --- Report -----------------------------------------------------------------------
 width = max(len(step) for _, step, _ in results)
