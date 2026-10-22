@@ -27,7 +27,9 @@ class Config:
         JWT_SECRET_KEY = ""
     JWT_ALGORITHM = "HS256"
     JWT_EXPIRY_HOURS = 12
-    ML_SERVICE_URL = os.environ.get("ML_SERVICE_URL", "http://localhost:6000")
+    # 127.0.0.1, not "localhost": on Windows "localhost" tries IPv6 (::1)
+    # first, and the ML service listens on IPv4 only, which cost ~2 s per call.
+    ML_SERVICE_URL = os.environ.get("ML_SERVICE_URL", "http://127.0.0.1:6000")
 
     # 1 = this instance is shared on the internet (scripts/share.ps1). It then
     # refuses to start without strong secrets from the git-ignored

@@ -64,6 +64,7 @@ erDiagram
         int coordinator_id FK
         string job_role
         date drive_date
+        date application_deadline
         numeric package_lpa
         numeric min_cgpa
         int max_backlogs
@@ -134,6 +135,7 @@ Kept out of the diagram so it stays legible on an A4 page. Each list is a
 | `coordinator.role` | TPO, Coordinator |
 | `drive.drive_type` | Full-Time, Internship |
 | `drive.status` | Upcoming, Ongoing, Completed, Cancelled |
+| `drive.application_deadline` | a date on or before `drive.drive_date` (CHECK) |
 | `application.status` | Applied, Shortlisted, Interview_Scheduled, Rejected, Selected, Offer_Made |
 | `interview_round.round_type` | Aptitude, Technical, HR, Group_Discussion, Coding_Test |
 | `interview_round.result` | Pass, Fail, Pending |
@@ -168,7 +170,7 @@ stay correct even if someone edits the data directly in SQL:
 | `trg_application_status_audit` | one `application_status_history` row per status change |
 | `sp_close_drive` (procedure) | `drive.status` → `Completed`, pending applications → `Rejected` |
 
-And four BEFORE triggers refuse rows that break a rule (error codes PL001–PL007,
+And four BEFORE triggers refuse rows that break a rule (error codes PL001–PL008,
 evidence in `docs/evidence/triggers.md`): `trg_application_before_insert`,
 `trg_offer_before_accept`, `trg_offer_requires_selected`,
 `trg_application_status_transition`.

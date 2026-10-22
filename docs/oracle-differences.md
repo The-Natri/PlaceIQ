@@ -105,6 +105,15 @@ Copied unchanged. They use only ANSI SQL (`JOIN`, `GROUP BY`, `COUNT`, `AVG`, `M
 
 🟡 **Unverified on Oracle: concurrent accepts.** Both versions lock the student row (`SELECT ... FOR UPDATE`) so that two *simultaneous* accepts for the same student are serialized. On **PostgreSQL this is verified**: `docs/evidence/transaction.md` scenario 4 runs two real connections, and the second one waits on the lock, then is refused with PL003. The Oracle demo runs in one SQL*Plus session, so it cannot show two transactions racing; on Oracle the claim rests on its documented locking behaviour.
 
+### Date integrity (−20008)
+
+`drive.application_deadline` with `CHECK (application_deadline <= drive_date)` ports unchanged. The
+deadline and "not in the future" checks join `trg_application_before_insert` and raise −20008.
+`TRUNC(CAST(:NEW.applied_at AS DATE))` plays the part of Postgres's `applied_at::DATE`.
+`fn_get_eligible_drives` adds `application_deadline >= TRUNC(SYSDATE)`. ✅ Demo step 4f moves a
+deadline to yesterday inside a savepoint and shows ORA-20008 for an otherwise eligible student.
+The demo data's dates are relative to `SYSDATE`, like `db/seed.py`.
+
 ## 7. Audit trigger (Section 7)
 
 Same design: `application_status_history` plus an `AFTER UPDATE OF status` row trigger with `WHEN (OLD.status <> NEW.status)`. Oracle adds a sequence and a `BEFORE INSERT` id trigger, named `trg_app_status_history_bi` to stay under 30 characters. ✅ The demo prints Meera's three-step history, and every status move in the seed was logged (17 rows).
@@ -144,7 +153,8 @@ Neither version COMMITs inside the procedure, so the caller can roll the close b
 | `CONCURRENTLY` refresh | No Oracle keyword; atomic refresh gives the equivalent reader behaviour (§10) |
 | Two object names | `trg_application_status_transition` → `trg_app_status_transition`, and the history-id trigger → `trg_app_status_history_bi` (30-character limit in 11g) |
 | Minimum version | 11g (compound trigger), was 9i |
-| Backend error mapping | `backend/utils/db_errors.py` maps the **Postgres** codes PL001–PL007. An Oracle-backed backend would map −20001 to −20007 instead; not built, since the app runs on Postgres |
+| Backend error mapping | `backend/utils/db_errors.py` maps the **Postgres** codes PL001–PL008. An Oracle-backed backend would map −20001 to −20008 instead; not built, since the app runs on Postgres |
+| Time zone | Postgres: `schema.sql` sets the database's time zone to Asia/Kolkata, so `CURRENT_DATE`, `now()` and every `applied_at` follow the college's calendar. Oracle: `SYSDATE` follows the database server's OS clock and `CURRENT_TIMESTAMP` the session time zone. For a deployment in India, set the server or session time zone accordingly (`ALTER SESSION SET TIME_ZONE = 'Asia/Kolkata'`). The demo uses dates relative to `SYSDATE`, so it is consistent either way. |
 | Python seed (`db/seed.py`) | Postgres-only (psycopg2). Oracle gets the small hand-written `seed_oracle_demo.sql` instead |
 
 Out of scope, but worth knowing if the whole app were ever moved to Oracle:

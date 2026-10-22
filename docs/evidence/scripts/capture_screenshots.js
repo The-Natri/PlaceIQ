@@ -42,6 +42,9 @@ if (!EMAIL || !DRIVE_ID) throw new Error("set SHOT_STUDENT_EMAIL and SHOT_DRIVE_
   await page.getByRole("heading", { name: /Welcome,/ }).waitFor();
   await page.getByText("How this is worked out").waitFor();
   await page.getByText(/CGPA standing in your department/).waitFor();
+  // Every dashboard request must have answered: the Eligible Drives tab shows
+  // its count only once the drive list has loaded.
+  await page.getByRole("tab", { name: /Eligible Drives\s*\d+/ }).waitFor();
   await shot("02-student-dashboard");
 
   const probability = page.locator(".card").filter({ hasText: "Placement probability" }).first();

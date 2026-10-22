@@ -325,6 +325,10 @@ def backend_routes():
     for rule in create_app().url_map.iter_rules():
         if not rule.rule.startswith("/api"):
             continue
+        # The catch-all that answers unknown /api paths with a JSON 404
+        # (app.py, api_not_found) is not an endpoint, so it isn't documented.
+        if rule.endpoint == "api_not_found":
+            continue
         path = re.sub(r"<(?:int:)?([a-z_]+)>", ":id", rule.rule)
         for m in rule.methods - {"HEAD", "OPTIONS"}:
             routes.add((m, path))
