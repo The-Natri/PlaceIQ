@@ -25,6 +25,7 @@
 --   -20004 drive not found     -20005 drive already closed
 --   -20006 offer on an application that isn't Selected
 --   -20007 illegal application status transition
+--   -20008 application after the drive's deadline, or dated in the future
 --
 -- SQL*PLUS MECHANICS: every PL/SQL block below (CREATE ... TRIGGER, CREATE
 -- ... FUNCTION) ends with a `/` on its own line. That is not a typo or an
@@ -215,6 +216,10 @@ CREATE TABLE drive (
     coordinator_id  NUMBER REFERENCES coordinator(coordinator_id),
     job_role        VARCHAR2(100) NOT NULL,
     drive_date      DATE NOT NULL,
+    -- Last day to apply. Same-row rule, so a CHECK; the application-side
+    -- rule needs the drive's row too, so it is in trg_application_before_insert.
+    application_deadline DATE NOT NULL,
+    CHECK (application_deadline <= drive_date),
     package_lpa     NUMBER(6,2) NOT NULL CHECK (package_lpa > 0),
     min_cgpa        NUMBER(4,2) DEFAULT 0 NOT NULL CHECK (min_cgpa BETWEEN 0 AND 10),
     max_backlogs    NUMBER DEFAULT 0 NOT NULL CHECK (max_backlogs >= 0),
@@ -552,6 +557,7 @@ BEGIN
         SELECT d.*
           FROM drive d
          WHERE d.status IN ('Upcoming', 'Ongoing')
+           AND d.application_deadline >= TRUNC(SYSDATE)  -- still accepting applications
            AND fn_check_eligibility(p_student_id, d.drive_id) = 1;
     RETURN v_cursor;
 END fn_get_eligible_drives;
@@ -642,12 +648,27 @@ BEFORE INSERT ON application
 FOR EACH ROW
 DECLARE
     v_drive_status drive.status%TYPE;
+    v_deadline     drive.application_deadline%TYPE;
 BEGIN
-    SELECT status INTO v_drive_status FROM drive WHERE drive_id = :NEW.drive_id;
+    SELECT status, application_deadline INTO v_drive_status, v_deadline
+      FROM drive WHERE drive_id = :NEW.drive_id;
 
     IF v_drive_status IN ('Completed', 'Cancelled') THEN
         RAISE_APPLICATION_ERROR(-20002,
             'Drive ' || :NEW.drive_id || ' is ' || v_drive_status || ' and no longer accepts applications');
+    END IF;
+
+    -- Date integrity, as in the Postgres version: the row's own applied_at
+    -- (not SYSDATE) is checked, so explicit dates are held to the rule too.
+    -- TRUNC drops the time of day, like ::DATE in Postgres.
+    IF :NEW.applied_at > CURRENT_TIMESTAMP THEN
+        RAISE_APPLICATION_ERROR(-20008,
+            'Application date ' || TO_CHAR(:NEW.applied_at, 'YYYY-MM-DD HH24:MI') || ' is in the future');
+    END IF;
+
+    IF TRUNC(CAST(:NEW.applied_at AS DATE)) > v_deadline THEN
+        RAISE_APPLICATION_ERROR(-20008,
+            'Applications for drive ' || :NEW.drive_id || ' closed on ' || TO_CHAR(v_deadline, 'YYYY-MM-DD'));
     END IF;
 
     IF fn_check_eligibility(:NEW.student_id, :NEW.drive_id) = 0 THEN

@@ -4,7 +4,7 @@ The offer-acceptance transaction run by hand in psql, showing what atomicity mea
 in practice. For the same transaction run through the real backend code (accept,
 decline, and a rule-triggered rollback), see `transaction.md`.
 
-_Generated 2026-10-21 20:06 by `docs/evidence/scripts/build_sql_evidence.py` against the live `placement_db` (freshly seeded). Output blocks are unedited psql output._
+_Generated 2026-10-22 05:28 by `docs/evidence/scripts/build_sql_evidence.py` against the live `placement_db` (freshly seeded). Output blocks are unedited psql output._
 
 ## A. The accept transaction, statement by statement (COMMIT replaced by ROLLBACK)
 
@@ -51,7 +51,7 @@ SELECT o.offer_id, o.status, o.joining_date, s.placement_status,
  WHERE o.offer_id = 3;
  offer_id |  status  | joining_date | placement_status | history_rows 
 ----------+----------+--------------+------------------+--------------
-        3 | Accepted | 2026-01-06   | Placed           |            2
+        3 | Accepted | 2026-08-24   | Placed           |            2
 (1 row)
 
 ROLLBACK;
@@ -102,7 +102,7 @@ UPDATE student SET placement_status = 'Placed' WHERE student_id = 52;
 UPDATE 1
 INSERT INTO offer_history (offer_id, action, notes) VALUES (3, 'Bogus', 'not an allowed action');
 ERROR:  new row for relation "offer_history" violates check constraint "offer_history_action_check"
-DETAIL:  Failing row contains (339, 3, Bogus, 2026-10-21 14:36:24.628669, not an allowed action).
+DETAIL:  Failing row contains (331, 3, Bogus, 2026-10-22 05:28:31.307385, not an allowed action).
 SELECT offer_id, status FROM offer WHERE offer_id = 3;
 ERROR:  current transaction is aborted, commands ignored until end of transaction block
 COMMIT;

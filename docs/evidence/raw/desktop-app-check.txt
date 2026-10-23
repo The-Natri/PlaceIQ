@@ -1,0 +1,10 @@
+PASS | Before launch: no PlaceIQ containers running            | none
+PASS | App started the stack and opened http://localhost:8080  | 16s
+PASS | Containers started by the app                           | placeiq_ml,placeiq_app,placement_db
+PASS | Student signs in inside the app window                  | 
+PASS | Admin signs in inside the app window                    | 
+PASS | App exited after the window was closed                  | exit code 0
+PASS | After quit: no containers left running                  | none
+PASS | After quit: no PlaceIQ.exe processes left               | INFO: No tasks are running which match the specified criteria.
+
+TOTAL: 8/8 passed

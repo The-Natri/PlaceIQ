@@ -11,6 +11,7 @@ from flask import Blueprint, g, jsonify, request
 from db import get_cursor
 from utils.auth_middleware import require_auth
 from utils.security import generate_token, hash_password, verify_password
+from utils.rate_limit import rate_limited
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
@@ -18,6 +19,7 @@ REQUIRED_SIGNUP_FIELDS = ["reg_no", "name", "email", "password", "dept_id", "cgp
 
 
 @auth_bp.post("/student/signup")
+@rate_limited("signup")
 def student_signup():
     body = request.get_json(silent=True) or {}
     missing = [f for f in REQUIRED_SIGNUP_FIELDS if body.get(f) in (None, "")]
@@ -56,6 +58,7 @@ def student_signup():
 
 
 @auth_bp.post("/student/login")
+@rate_limited("login")
 def student_login():
     body = request.get_json(silent=True) or {}
     email, password = body.get("email"), body.get("password")
@@ -88,6 +91,7 @@ def student_login():
 
 
 @auth_bp.post("/admin/login")
+@rate_limited("login")
 def admin_login():
     body = request.get_json(silent=True) or {}
     email, password = body.get("email"), body.get("password")

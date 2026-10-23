@@ -4,7 +4,7 @@ Every table's columns, types and constraints, read from the PostgreSQL system
 catalog (`information_schema`, `pg_constraint`, `pg_indexes`, `pg_trigger`) of the
 running database, so this always matches what `db/schema.sql` actually created.
 
-_Generated 2026-10-21 20:06 by `docs/evidence/scripts/build_sql_evidence.py` against the live `placement_db` (freshly seeded). Output blocks are unedited psql output._
+_Generated 2026-10-22 05:28 by `docs/evidence/scripts/build_sql_evidence.py` against the live `placement_db` (freshly seeded). Output blocks are unedited psql output._
 
 ## All tables at a glance
 
@@ -25,9 +25,9 @@ SELECT t.table_name,
  company                    |       5 |   18
  coordinator                |       6 |    2
  department                 |       3 |    6
- drive                      |      11 |   25
+ drive                      |      12 |   25
  drive_eligible_dept        |       2 |   40
- interview_round            |       7 |  842
+ interview_round            |       7 |  806
  offer                      |       6 |  177
  offer_history              |       5 |  329
  skill                      |       2 |   28
@@ -261,20 +261,21 @@ SELECT column_name, data_type || COALESCE('(' || character_maximum_length || ')'
   FROM information_schema.columns
  WHERE table_schema = 'public' AND table_name = 'drive'
  ORDER BY ordinal_position;
-  column_name   |            type             | nullable |            default             
-----------------+-----------------------------+----------+--------------------------------
- drive_id       | integer                     | NO       | identity
- company_id     | integer                     | NO       | (null)
- coordinator_id | integer                     | YES      | (null)
- job_role       | character varying(100)      | NO       | (null)
- drive_date     | date                        | NO       | (null)
- package_lpa    | numeric(6,2)                | NO       | (null)
- min_cgpa       | numeric(4,2)                | NO       | 0
- max_backlogs   | integer                     | NO       | 0
- drive_type     | character varying(20)       | NO       | 'Full-Time'::character varying
- status         | character varying(20)       | NO       | 'Upcoming'::character varying
- created_at     | timestamp without time zone | NO       | CURRENT_TIMESTAMP
-(11 rows)
+     column_name      |            type             | nullable |            default             
+----------------------+-----------------------------+----------+--------------------------------
+ drive_id             | integer                     | NO       | identity
+ company_id           | integer                     | NO       | (null)
+ coordinator_id       | integer                     | YES      | (null)
+ job_role             | character varying(100)      | NO       | (null)
+ drive_date           | date                        | NO       | (null)
+ application_deadline | date                        | NO       | (null)
+ package_lpa          | numeric(6,2)                | NO       | (null)
+ min_cgpa             | numeric(4,2)                | NO       | 0
+ max_backlogs         | integer                     | NO       | 0
+ drive_type           | character varying(20)       | NO       | 'Full-Time'::character varying
+ status               | character varying(20)       | NO       | 'Upcoming'::character varying
+ created_at           | timestamp without time zone | NO       | CURRENT_TIMESTAMP
+(12 rows)
 
 SELECT conname AS constraint_name,
        CASE contype WHEN 'p' THEN 'PRIMARY KEY' WHEN 'f' THEN 'FOREIGN KEY' WHEN 'u' THEN 'UNIQUE' WHEN 'c' THEN 'CHECK' END AS kind,
@@ -284,6 +285,7 @@ SELECT conname AS constraint_name,
  ORDER BY contype, conname;
       constraint_name      |    kind     |                                                                                  definition                                                                                   
 ---------------------------+-------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ drive_check               | CHECK       | CHECK ((application_deadline <= drive_date))
  drive_drive_type_check    | CHECK       | CHECK (((drive_type)::text = ANY ((ARRAY['Full-Time'::character varying, 'Internship'::character varying])::text[])))
  drive_max_backlogs_check  | CHECK       | CHECK ((max_backlogs >= 0))
  drive_min_cgpa_check      | CHECK       | CHECK (((min_cgpa >= (0)::numeric) AND (min_cgpa <= (10)::numeric)))
@@ -292,7 +294,7 @@ SELECT conname AS constraint_name,
  drive_company_id_fkey     | FOREIGN KEY | FOREIGN KEY (company_id) REFERENCES company(company_id)
  drive_coordinator_id_fkey | FOREIGN KEY | FOREIGN KEY (coordinator_id) REFERENCES coordinator(coordinator_id)
  drive_pkey                | PRIMARY KEY | PRIMARY KEY (drive_id)
-(8 rows)
+(9 rows)
 ```
 
 ## `drive_eligible_dept`

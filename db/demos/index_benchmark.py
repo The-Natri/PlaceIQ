@@ -99,8 +99,10 @@ def build_bench_db():
         SELECT 'Company ' || g FROM generate_series(1, {N_COMPANIES}) g
     """)
     cur.execute(f"""
-        INSERT INTO drive (company_id, job_role, drive_date, package_lpa, min_cgpa, max_backlogs, status)
+        INSERT INTO drive (company_id, job_role, drive_date, application_deadline,
+                           package_lpa, min_cgpa, max_backlogs, status)
         SELECT (g % {N_COMPANIES}) + 1, 'Role ' || g, DATE '2025-08-01' + (g % 200),
+               DATE '2025-08-01' + (g % 200) - 3,
                5 + (g % 25), 6 + (g % 3) * 0.5, g % 3, 'Ongoing'
         FROM generate_series(1, {N_DRIVES}) g
     """)

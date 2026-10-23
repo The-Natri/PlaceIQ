@@ -1,81 +1,45 @@
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { Navbar } from "./components/Navbar";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth/AuthContext";
 import { homeRouteFor } from "./auth/homeRoute";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
-import { Login } from "./pages/Login";
-import { Signup } from "./pages/Signup";
-import { StudentDashboard } from "./pages/StudentDashboard";
-import { AdminDashboard } from "./pages/AdminDashboard";
-import { AdminDriveDetail } from "./pages/AdminDriveDetail";
-import { AdminAnalytics } from "./pages/AdminAnalytics";
+import { AppLayout } from "./components/layout/AppLayout";
+import { Loading } from "./components/ui/Feedback";
+import { Login } from "./pages/auth/Login";
+import { Signup } from "./pages/auth/Signup";
+import { StudentDashboard } from "./pages/student/StudentDashboard";
+import { AdminDrives } from "./pages/admin/AdminDrives";
+import { AdminDriveDetail } from "./pages/admin/AdminDriveDetail";
+import { AdminStudents } from "./pages/admin/AdminStudents";
+import { AdminAnalytics } from "./pages/admin/AdminAnalytics";
 
 function Home() {
   const { user, loading } = useAuth();
-
-  if (loading) return <p>Loading...</p>;
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <Navigate to={homeRouteFor(user.role)} replace />;
+  if (loading) return <Loading label="Checking your session…" />;
+  return <Navigate to={user ? homeRouteFor(user.role) : "/login"} replace />;
 }
 
 export default function App() {
-  const location = useLocation();
-
-  const hideNavbar =
-    location.pathname === "/login" ||
-    location.pathname === "/signup";
-
   return (
-    <>
-      {!hideNavbar && <Navbar />}
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
 
-      <Routes>
-        <Route path="/" element={<Home />} />
+      {/* Student area: one layout, guarded once for every page inside it */}
+      <Route element={<ProtectedRoute role="student"><AppLayout /></ProtectedRoute>}>
+        <Route path="/student" element={<StudentDashboard />} />
+      </Route>
 
-        <Route path="/login" element={<Login />} />
+      {/* Admin / placement-cell area */}
+      <Route element={<ProtectedRoute role="admin"><AppLayout /></ProtectedRoute>}>
+        <Route path="/admin" element={<AdminDrives />} />
+        <Route path="/admin/drives" element={<AdminDrives />} />
+        <Route path="/admin/drives/:driveId" element={<AdminDriveDetail />} />
+        <Route path="/admin/students" element={<AdminStudents />} />
+        <Route path="/admin/analytics" element={<AdminAnalytics />} />
+      </Route>
 
-        <Route path="/signup" element={<Signup />} />
-
-        <Route
-          path="/student"
-          element={
-            <ProtectedRoute role="student">
-              <StudentDashboard />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/admin"
-          element={
-            <ProtectedRoute role="admin">
-              <AdminDashboard />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/admin/drives/:driveId"
-          element={
-            <ProtectedRoute role="admin">
-              <AdminDriveDetail />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/admin/analytics"
-          element={
-            <ProtectedRoute role="admin">
-              <AdminAnalytics />
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
-    </>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }

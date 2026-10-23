@@ -5,7 +5,7 @@ picked by the queries themselves (see each `\gset`). Rule violations show psql's
 `ERROR` line, followed by the SQLSTATE code the backend maps to an HTTP status
 (`backend/utils/db_errors.py`). Anything that changes data is rolled back.
 
-_Generated 2026-10-21 20:06 by `docs/evidence/scripts/build_sql_evidence.py` against the live `placement_db` (freshly seeded). Output blocks are unedited psql output._
+_Generated 2026-10-22 05:28 by `docs/evidence/scripts/build_sql_evidence.py` against the live `placement_db` (freshly seeded). Output blocks are unedited psql output._
 
 ## 1. Placement-status trigger (`trg_offer_after_insert`, AFTER INSERT on `offer`)
 
@@ -31,7 +31,7 @@ UPDATE 1
 INSERT INTO offer (application_id, offered_package_lpa) VALUES (62, 9.50) RETURNING offer_id, status;
  offer_id | status  
 ----------+---------
-      186 | Pending
+      178 | Pending
 (1 row)
 
 INSERT 0 1
@@ -52,7 +52,7 @@ A student applies to an open drive whose CGPA cutoff they don't meet. The INSERT
 ```text
 SELECT s.student_id AS sid, d.drive_id AS did, s.cgpa, d.min_cgpa
   FROM student s CROSS JOIN drive d
- WHERE d.status IN ('Upcoming', 'Ongoing') AND s.cgpa < d.min_cgpa
+ WHERE d.status IN ('Upcoming', 'Ongoing') AND d.application_deadline >= CURRENT_DATE AND s.cgpa < d.min_cgpa
  ORDER BY s.cgpa, d.drive_id LIMIT 1 
 SELECT 8 AS student_id, 4.50 AS cgpa, 1 AS drive_id, 8.25 AS drive_min_cgpa;
  student_id | cgpa | drive_id | drive_min_cgpa 
@@ -62,7 +62,7 @@ SELECT 8 AS student_id, 4.50 AS cgpa, 1 AS drive_id, 8.25 AS drive_min_cgpa;
 
 INSERT INTO application (student_id, drive_id) VALUES (8, 1);
 ERROR:  Student 8 is not eligible for drive 1
-CONTEXT:  PL/pgSQL function trg_fn_application_guard() line 20 at RAISE
+CONTEXT:  PL/pgSQL function trg_fn_application_guard() line 38 at RAISE
 >>> SQLSTATE of the error above: PL001
 ```
 
@@ -85,7 +85,7 @@ SELECT drive_id, status FROM drive WHERE drive_id = 2;
 
 INSERT INTO application (student_id, drive_id) VALUES (12, 2);
 ERROR:  Drive 2 is Completed and no longer accepts applications
-CONTEXT:  PL/pgSQL function trg_fn_application_guard() line 14 at RAISE
+CONTEXT:  PL/pgSQL function trg_fn_application_guard() line 16 at RAISE
 >>> SQLSTATE of the error above: PL002
 ```
 
@@ -197,9 +197,9 @@ UPDATE 1
 UPDATE application SET status = 'Shortlisted' WHERE application_id = 8;
 UPDATE 1
 SELECT old_status, new_status, changed_at FROM application_status_history WHERE application_id = 8 ORDER BY history_id;
- old_status | new_status  |         changed_at         
-------------+-------------+----------------------------
- Applied    | Shortlisted | 2026-10-21 14:36:24.113767
+ old_status | new_status  |        changed_at         
+------------+-------------+---------------------------
+ Applied    | Shortlisted | 2026-10-22 05:28:30.05492
 (1 row)
 
 ROLLBACK;

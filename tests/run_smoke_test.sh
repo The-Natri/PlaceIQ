@@ -44,7 +44,9 @@ DATABASE_URL="$SMOKE_URL" "$DB_PY" "$ROOT/db/seed.py" | tail -2
 
 echo "== Starting backend on :${PORT} against ${SMOKE_DB} =="
 cd "$ROOT/backend"
-DATABASE_URL="$SMOKE_URL" FLASK_DEBUG=0 "$BACKEND_PY" -m flask --app "app:create_app" run --port "$PORT" \
+# The production server (waitress, serve.py), exactly as start.ps1 and the
+# Docker image run it.
+DATABASE_URL="$SMOKE_URL" PORT="$PORT" "$BACKEND_PY" serve.py \
   > "${TMPDIR:-/tmp}/smoke-backend.log" 2>&1 &
 backend_pid=$!
 for _ in $(seq 1 30); do

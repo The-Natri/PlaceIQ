@@ -1,93 +1,93 @@
-# College Placement Management System
+# PlaceIQ: College Placement Management System
 
-DBMS academic project: Flask + PostgreSQL + React, with a small Flask ML
-microservice for a placement-probability widget. The database design
-(schema, triggers, procedures, views) is the primary deliverable — see
-`docs/er-diagram.md` and `docs/normalization.md`. An Oracle/SQL*Plus port
-of the schema (for professors who specifically want SQL*Plus) lives at
-`db/schema_oracle.sql`, with every divergence explained in
-`docs/oracle-differences.md` — verified against a real Oracle 21c instance,
-not just written. `docs/viva-cheatsheet.md` is a one-page pre-viva reference.
+DBMS academic project: PostgreSQL + Flask (raw psycopg2) + React, with a small
+ML service for a placement-probability widget. The database design (schema,
+triggers, procedures, views) is the main deliverable: see `docs/er-diagram.md`
+and `docs/normalization.md`. An Oracle/SQL*Plus port of the schema is in
+`db/schema_oracle.sql`, verified on Oracle 21c (`docs/oracle-differences.md`).
+`docs/viva-cheatsheet.md` is a one-page pre-viva reference, and
+`docs/PlaceIQ_DA3_Report.pdf` is the project report.
+
+**Everything runs at one address: http://localhost:8080** (the UI and the API
+on one port; the ML service and the database are not exposed).
+
+## Run it
+
+Pick one. All three use the same data.
+
+### 1. One command (Docker)
+
+Needs only **Docker Desktop** (free for personal and education use).
+
+```bash
+docker compose up -d --build     # then open http://localhost:8080
+docker compose down              # stop (data is kept)
+```
+
+The first start builds the images, creates the tables, loads the synthetic
+data and trains the model (about 4 minutes). Later starts take seconds. A JWT
+secret is generated into a Docker volume the first time, or taken from `.env`
+if you have one.
+
+### 2. Desktop app (Windows)
+
+`desktop/dist/PlaceIQ-1.0.0-portable.exe`: double-click it. It checks that
+Docker Desktop is running (and offers **Retry** if not), starts the same stack,
+shows PlaceIQ in its own window, and stops the stack when you close it.
+It needs Docker Desktop installed; see `desktop/README.md` for what it does
+and doesn't bundle, and how to build it (`npm run dist` in `desktop/`).
+
+### 3. Without Docker for the app (local virtualenvs)
+
+Postgres still runs in Docker; the app and the ML service run from Python
+virtualenvs on this machine.
+
+| Windows (PowerShell) | macOS / Linux / Git Bash |
+|---|---|
+| `.\start.ps1` | `./start.sh` |
+| `.\stop.ps1` | `./stop.sh` |
+
+The start scripts check Docker (and say clearly if it isn't running),
+generate a JWT secret into your git-ignored `.env`, create the tables and load
+the data if needed, rebuild the UI when its source changed, start everything
+and open http://localhost:8080. One-time setup of the virtualenvs:
+
+| Windows (PowerShell) | macOS / Linux |
+|---|---|
+| `python -m venv .venv-db; .venv-db\Scripts\python -m pip install -r db/requirements.txt`<br>`python -m venv .venv-backend; .venv-backend\Scripts\python -m pip install -r backend/requirements.txt`<br>`python -m venv .venv-ml; .venv-ml\Scripts\python -m pip install -r ml-service/requirements.txt -c ml-service/constraints.txt` | `python3 -m venv .venv-db && .venv-db/bin/python -m pip install -r db/requirements.txt`<br>`python3 -m venv .venv-backend && .venv-backend/bin/python -m pip install -r backend/requirements.txt`<br>`python3 -m venv .venv-ml && .venv-ml/bin/python -m pip install -r ml-service/requirements.txt -c ml-service/constraints.txt` |
+
+Node.js is needed only to build the UI (`npm run build` in `frontend/`); for
+live UI editing see `frontend/README.md`.
+
+## Share it
+
+**Temporary public link (free, no account):** `.\scripts\share.ps1`
+(`./scripts/share.sh`) starts PlaceIQ in public mode and prints an
+`https://<random-words>.trycloudflare.com` link through a Cloudflare quick
+tunnel. It asks before downloading `cloudflared` from Cloudflare's official
+release page. In public mode the demo passwords are replaced by random ones
+kept in the git-ignored `.env.public`, the JWT secret comes from there too, and
+logins are rate-limited. Stop with `.\scripts\share.ps1 -Stop` (restores the
+demo passwords).
+
+**Permanent free hosting:** follow `DEPLOY_FREE.md` (Render + Neon, steps you
+run yourself, with their limits).
 
 ## Repo layout
 
 ```
-db/            schema.sql (DDL), seed.py (synthetic dataset generator)
-backend/       Flask API (raw psycopg2, no ORM — see backend/db.py for why)
-frontend/      React (Vite) UI — owned by the frontend teammate
-ml-service/    Flask microservice, trains + serves the placement model
-docs/          er-diagram.md, normalization.md
-docker-compose.yml   Postgres 16 for local dev
+db/            schema.sql (DDL), seed.py (synthetic data), Oracle port, demos
+backend/       Flask API (raw psycopg2, no ORM), serve.py = production server
+frontend/      React (Vite) UI, built into frontend/dist and served by the backend
+ml-service/    placement model: train.py + app.py (internal service)
+docker/        first-run database setup, entrypoint, password tool
+desktop/       Windows desktop app (Electron)
+scripts/       share.ps1 / share.sh (public link)
+tests/         smoke test, API contract check, browser checks
+docs/          report, ER diagram, normalization, API, evidence
+docker-compose.yml       db + app + ml (only app publishes a port)
+docker-compose.dev.yml   also publishes Postgres on 127.0.0.1 (for local tools)
 ```
-
-## Quick start
-
-**Prerequisites:** Docker Desktop, Python 3.10+, Node.js 18+.
-
-The only difference between platforms is where a virtual environment keeps
-its Python: `.venv-x\Scripts\python` on Windows, `.venv-x/bin/python` on
-macOS/Linux. Every command below calls that Python directly, so nothing needs
-"activating". Run all commands from the repo root unless a step says `cd`.
-
-1. **Start Postgres** (same everywhere):
-   ```
-   docker compose up -d db
-   ```
-
-2. **Create your `.env`** and give it a real JWT secret (anyone who knows the
-   secret can forge an admin login, so never reuse the placeholder):
-
-   | Windows (PowerShell) | macOS / Linux |
-   |---|---|
-   | `Copy-Item .env.example .env` | `cp .env.example .env` |
-
-   Generate a secret with
-   `python -c "import secrets; print(secrets.token_urlsafe(64))"` and paste it
-   as the `JWT_SECRET_KEY` value in `.env`.
-
-3. **Load the schema** (PowerShell has no `<` redirection, hence the pipe):
-
-   | Windows (PowerShell) | macOS / Linux |
-   |---|---|
-   | `Get-Content db/schema.sql \| docker exec -i placement_db psql -U placement_admin -d placement_db` | `docker exec -i placement_db psql -U placement_admin -d placement_db < db/schema.sql` |
-
-4. **Seed synthetic data** (180 students, 18 companies, 25 drives, outcomes
-   correlated with CGPA; see the comment at the top of `db/seed.py`). Takes
-   about 2-3 minutes.
-
-   | Windows (PowerShell) | macOS / Linux |
-   |---|---|
-   | `python -m venv .venv-db`<br>`.venv-db\Scripts\python -m pip install -r db/requirements.txt`<br>`.venv-db\Scripts\python db/seed.py` | `python3 -m venv .venv-db`<br>`.venv-db/bin/python -m pip install -r db/requirements.txt`<br>`.venv-db/bin/python db/seed.py` |
-
-5. **Run the backend** (port 5000):
-
-   | Windows (PowerShell) | macOS / Linux |
-   |---|---|
-   | `python -m venv .venv-backend`<br>`.venv-backend\Scripts\python -m pip install -r backend/requirements.txt`<br>`cd backend; ..\.venv-backend\Scripts\python app.py` | `python3 -m venv .venv-backend`<br>`.venv-backend/bin/python -m pip install -r backend/requirements.txt`<br>`cd backend && ../.venv-backend/bin/python app.py` |
-
-   Check `http://127.0.0.1:5000/api/health`. Debug mode is off by default;
-   set `FLASK_DEBUG=1` in `.env` for auto-reload while developing.
-
-6. **Run the ML service** (port 6000; trains a model from the database on first start):
-
-   | Windows (PowerShell) | macOS / Linux |
-   |---|---|
-   | `python -m venv .venv-ml`<br>`.venv-ml\Scripts\python -m pip install -r ml-service/requirements.txt`<br>`cd ml-service; ..\.venv-ml\Scripts\python app.py` | `python3 -m venv .venv-ml`<br>`.venv-ml/bin/python -m pip install -r ml-service/requirements.txt`<br>`cd ml-service && ../.venv-ml/bin/python app.py` |
-
-   Check `http://127.0.0.1:6000/health`. Re-run `train.py` in `ml-service/`
-   after re-seeding so the model matches the data.
-
-7. **Run the frontend** (port 5173). **Run `npm install` again every time you
-   pull**, since teammates may add packages (e.g. `lucide-react`):
-
-   | Windows (PowerShell) | macOS / Linux |
-   |---|---|
-   | `cd frontend`<br>`npm install`<br>`Copy-Item .env.example .env`<br>`npm run dev` | `cd frontend`<br>`npm install`<br>`cp .env.example .env`<br>`npm run dev` |
-
-   Open `http://localhost:5173`. `frontend/.env` holds `VITE_API_URL` (the
-   backend address). If the frontend runs on a different address, add it to
-   `FRONTEND_ORIGINS` in the root `.env`, or the browser will block its API
-   calls (CORS).
 
 ### Seeded login credentials
 - TPO/admin: `tpo@campus.edu` / `Admin@123`
@@ -107,10 +107,16 @@ macOS/Linux. Every command below calls that Python directly, so nothing needs
   student and admin roles, and an explicit multi-statement offer transaction
   (`backend/services/offer_service.py`).
 - **ML service** (`ml-service/`): placement-probability model (below).
-- **Frontend** (`frontend/`): React + Vite.
-- **Tests** (`tests/`): an end-to-end smoke test that runs against a
-  throwaway database. Run it with `bash tests/run_smoke_test.sh`
-  (needs Postgres and the ML service running).
+- **Frontend** (`frontend/`): React + Vite, built and served by the backend
+  from the same origin (no CORS).
+- **Dates**: every drive has an application deadline; the database refuses
+  applications after it or dated in the future (trigger, PL008), and the
+  synthetic timelines are always in order (`docs/evidence/date-integrity.md`).
+- **Tests** (`tests/`): an end-to-end smoke test on a throwaway database
+  (`bash tests/run_smoke_test.sh`, needs the database and the ML service, as
+  started by `start.ps1`), the API contract check
+  (`bash tests/run_smoke_test.sh tests/api_contract_check.py`), and browser
+  checks for the single URL and the desktop app.
 
 ## ML model: what the numbers mean
 

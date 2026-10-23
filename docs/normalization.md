@@ -77,10 +77,17 @@ every past drive row).
 ## drive
 **Key:** `drive_id`
 **FDs:** `drive_id → company_id, coordinator_id, job_role, drive_date,
-package_lpa, min_cgpa, max_backlogs, drive_type, status, created_at`
+application_deadline, package_lpa, min_cgpa, max_backlogs, drive_type, status, created_at`
 All attributes are facts about *this specific posting* (package, cutoffs,
-date) — none of them are actually facts about the company or coordinator, so
+dates) — none of them are actually facts about the company or coordinator, so
 there's no transitive dependency hiding here. 3NF.
+
+`application_deadline <= drive_date` relates two columns of the same row, so it
+is a CHECK constraint. "An application is dated on or before its drive's
+deadline" relates a row of `application` to a row of `drive`. That is not a
+functional dependency, and no CHECK can see another table, so it is enforced by
+the trigger `trg_application_before_insert` (PL008). It is not stored redundantly
+anywhere.
 
 ## drive_eligible_dept (junction)
 **Key:** composite `(drive_id, dept_id)`

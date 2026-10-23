@@ -8,7 +8,7 @@ from utils.db_errors import business_rule_response
 drives_bp = Blueprint("drives", __name__, url_prefix="/api/drives")
 
 DRIVE_EDITABLE_FIELDS = [
-    "job_role", "drive_date", "package_lpa", "min_cgpa", "max_backlogs",
+    "job_role", "drive_date", "application_deadline", "package_lpa", "min_cgpa", "max_backlogs",
     "drive_type", "status",
 ]
 
@@ -37,12 +37,14 @@ def create_drive():
             cur.execute(
                 """
                 INSERT INTO drive
-                    (company_id, coordinator_id, job_role, drive_date, package_lpa,
-                     min_cgpa, max_backlogs, drive_type, status)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    (company_id, coordinator_id, job_role, drive_date, application_deadline,
+                     package_lpa, min_cgpa, max_backlogs, drive_type, status)
+                VALUES (%s,%s,%s,%s,COALESCE(%s, %s::DATE),%s,%s,%s,%s,%s)
                 RETURNING drive_id
                 """,
+                # No deadline given: applications stay open until the drive day.
                 (body["company_id"], g.current_user["sub"], body["job_role"], body["drive_date"],
+                 body.get("application_deadline") or None, body["drive_date"],
                  body["package_lpa"], body["min_cgpa"], body["max_backlogs"],
                  body.get("drive_type", "Full-Time"), body.get("status", "Upcoming")),
             )
@@ -132,7 +134,7 @@ def list_drives():
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     query = f"""
-        SELECT dr.drive_id, dr.job_role, dr.drive_date, dr.package_lpa,
+        SELECT dr.drive_id, dr.job_role, dr.drive_date, dr.application_deadline, dr.package_lpa,
                dr.min_cgpa, dr.max_backlogs, dr.drive_type, dr.status,
                c.company_id, c.company_name
         FROM drive dr
@@ -152,7 +154,7 @@ def get_drive(drive_id):
     with get_cursor() as cur:
         cur.execute(
             """
-            SELECT dr.drive_id, dr.job_role, dr.drive_date, dr.package_lpa,
+            SELECT dr.drive_id, dr.job_role, dr.drive_date, dr.application_deadline, dr.package_lpa,
                    dr.min_cgpa, dr.max_backlogs, dr.drive_type, dr.status,
                    dr.created_at, c.company_id, c.company_name, c.industry_sector
             FROM drive dr

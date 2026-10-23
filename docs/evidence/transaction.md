@@ -56,7 +56,7 @@ Setup: Ira Verma (student 5) applied to drive 24; the admin moved application 51
   [before] offer.status=Pending, offer.joining_date=None, student.placement_status=Placed, offer_history=['Created']
 > POST /api/offers/178/accept
 < HTTP 200 {"offer_id": 178, "status": "Accepted"}
-  [after ] offer.status=Accepted, offer.joining_date=2026-12-20, student.placement_status=Placed, offer_history=['Created', 'Accepted']
+  [after ] offer.status=Accepted, offer.joining_date=2026-12-21, student.placement_status=Placed, offer_history=['Created', 'Accepted']
 ```
 
 ### 2. Decline: the student's only offer, so placement_status goes back
@@ -88,10 +88,10 @@ Setup: Priya Agarwal (student 10) applied to drive 15; the admin moved applicati
 
 Setup: the same student now also has offer 181 (Pending). Two connections will each accept one.
 
-  t= 0.06s  A: UPDATE offer 180 -> Accepted done (trigger took the student-row lock); A has NOT committed
-  t= 0.06s  B: UPDATE offer 181 -> Accepted sent
-  t= 1.56s  (B still waiting after 1.5 s: True)
-  t= 1.56s  A: COMMIT
-  t= 1.57s  B: refused, SQLSTATE PL003: Student 10 has already accepted another offer
+  t= 4.09s  A: UPDATE offer 180 -> Accepted done (trigger took the student-row lock); A has NOT committed
+  t= 4.10s  B: UPDATE offer 181 -> Accepted sent
+  t= 5.60s  (B still waiting after 1.5 s: True)
+  t= 5.60s  A: COMMIT
+  t= 5.60s  B: refused, SQLSTATE PL003: Student 10 has already accepted another offer
   [after] offer 180: Accepted, offer 181: Pending
 ```

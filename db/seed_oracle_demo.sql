@@ -79,17 +79,21 @@ SELECT s.student_id, k.skill_id FROM student s, skill k
 --   Associate Engineer        - easy (6.50 CGPA, 1 backlog), open to all branches
 --   Graduate Engineer Trainee - MECH only; closed by sp_close_drive in the demo
 --   Data Analyst              - finished earlier in the season
-INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, package_lpa, min_cgpa, max_backlogs, drive_type, status)
-SELECT company_id, 1, 'Software Engineer', DATE '2026-02-10', 18.00, 8.00, 0, 'Full-Time', 'Ongoing'
+-- Dates are relative to today (TRUNC(SYSDATE)), like db/seed.py, so the
+-- demo always satisfies the date rules: open drives still take
+-- applications, and the finished drive's whole timeline is in the past.
+-- Deadline <= drive date is a CHECK; applying after the deadline is -20008.
+INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, application_deadline, package_lpa, min_cgpa, max_backlogs, drive_type, status)
+SELECT company_id, 1, 'Software Engineer', TRUNC(SYSDATE) + 14, TRUNC(SYSDATE) + 10, 18.00, 8.00, 0, 'Full-Time', 'Ongoing'
   FROM company WHERE company_name = 'Nimbus Cloud Systems';
-INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, package_lpa, min_cgpa, max_backlogs, drive_type, status)
-SELECT company_id, 1, 'Associate Engineer', DATE '2026-02-15', 6.50, 6.50, 1, 'Full-Time', 'Ongoing'
+INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, application_deadline, package_lpa, min_cgpa, max_backlogs, drive_type, status)
+SELECT company_id, 1, 'Associate Engineer', TRUNC(SYSDATE) + 21, TRUNC(SYSDATE) + 15, 6.50, 6.50, 1, 'Full-Time', 'Ongoing'
   FROM company WHERE company_name = 'Coral Bay Solutions';
-INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, package_lpa, min_cgpa, max_backlogs, drive_type, status)
-SELECT company_id, 1, 'Graduate Engineer Trainee', DATE '2026-02-20', 7.20, 7.00, 1, 'Full-Time', 'Ongoing'
+INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, application_deadline, package_lpa, min_cgpa, max_backlogs, drive_type, status)
+SELECT company_id, 1, 'Graduate Engineer Trainee', TRUNC(SYSDATE) + 28, TRUNC(SYSDATE) + 20, 7.20, 7.00, 1, 'Full-Time', 'Ongoing'
   FROM company WHERE company_name = 'Granite Motors';
-INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, package_lpa, min_cgpa, max_backlogs, drive_type, status)
-SELECT company_id, 1, 'Data Analyst', DATE '2025-12-05', 14.00, 7.50, 0, 'Full-Time', 'Ongoing'
+INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, application_deadline, package_lpa, min_cgpa, max_backlogs, drive_type, status)
+SELECT company_id, 1, 'Data Analyst', TRUNC(SYSDATE) - 60, TRUNC(SYSDATE) - 65, 14.00, 7.50, 0, 'Full-Time', 'Ongoing'
   FROM company WHERE company_name = 'Nimbus Cloud Systems';
 
 INSERT INTO drive_eligible_dept (drive_id, dept_id)
@@ -99,9 +103,13 @@ INSERT INTO drive_eligible_dept (drive_id, dept_id)
 SELECT d.drive_id, dp.dept_id FROM drive d, department dp
  WHERE d.job_role = 'Graduate Engineer Trainee' AND dp.dept_code = 'MECH';
 
--- Applications (student reg_no -> drive job_role)
-INSERT INTO application (student_id, drive_id)
-SELECT s.student_id, d.drive_id FROM student s, drive d
+-- Applications (student reg_no -> drive job_role). Each is dated a few days
+-- before its drive's deadline, or two days ago for the open drives; never
+-- after the deadline and never in the future (-20008).
+INSERT INTO application (student_id, drive_id, applied_at)
+SELECT s.student_id, d.drive_id,
+       CAST(LEAST(d.application_deadline - 5, TRUNC(SYSDATE) - 2) AS TIMESTAMP) + INTERVAL '10' HOUR
+  FROM student s, drive d
  WHERE (s.reg_no, d.job_role) IN (
         ('CSE2024001', 'Data Analyst'), ('ISE2024003', 'Data Analyst'), ('CSE2024007', 'Data Analyst'),
         ('CSE2024001', 'Software Engineer'), ('CSE2024007', 'Software Engineer'), ('ISE2024003', 'Software Engineer'),
@@ -135,10 +143,10 @@ UPDATE application SET status = 'Shortlisted'
    AND student_id = (SELECT student_id FROM student WHERE reg_no = 'MEC2024005');
 
 INSERT INTO interview_round (application_id, round_number, round_type, round_date, result)
-SELECT a.application_id, 1, 'Aptitude', DATE '2025-12-06', 'Pass'
+SELECT a.application_id, 1, 'Aptitude', d.drive_date, 'Pass'
   FROM application a JOIN drive d ON d.drive_id = a.drive_id WHERE d.job_role = 'Data Analyst';
 INSERT INTO interview_round (application_id, round_number, round_type, round_date, result)
-SELECT a.application_id, 2, 'Technical', DATE '2025-12-08',
+SELECT a.application_id, 2, 'Technical', d.drive_date + 1,
        CASE WHEN s.reg_no = 'CSE2024007' THEN 'Fail' ELSE 'Pass' END
   FROM application a JOIN drive d ON d.drive_id = a.drive_id JOIN student s ON s.student_id = a.student_id
  WHERE d.job_role = 'Data Analyst';
@@ -146,11 +154,11 @@ SELECT a.application_id, 2, 'Technical', DATE '2025-12-08',
 -- Offers for the two Selected Data Analyst applicants (inserted Pending, as
 -- the backend does; trg_offer_after_insert marks both students Placed).
 INSERT INTO offer (application_id, offered_package_lpa, offer_date)
-SELECT a.application_id, 15.00, DATE '2025-12-12'
+SELECT a.application_id, 15.00, d.drive_date + 3
   FROM application a JOIN drive d ON d.drive_id = a.drive_id JOIN student s ON s.student_id = a.student_id
  WHERE d.job_role = 'Data Analyst' AND s.reg_no = 'CSE2024001';
 INSERT INTO offer (application_id, offered_package_lpa, offer_date)
-SELECT a.application_id, 14.50, DATE '2025-12-12'
+SELECT a.application_id, 14.50, d.drive_date + 3
   FROM application a JOIN drive d ON d.drive_id = a.drive_id JOIN student s ON s.student_id = a.student_id
  WHERE d.job_role = 'Data Analyst' AND s.reg_no = 'ISE2024003';
 
@@ -161,7 +169,7 @@ UPDATE application SET status = 'Offer_Made'
  WHERE application_id IN (SELECT application_id FROM offer);
 
 -- Aisha accepts her offer (Kavya's stays Pending for the transaction demo).
-UPDATE offer SET status = 'Accepted', joining_date = DATE '2026-02-10'
+UPDATE offer SET status = 'Accepted', joining_date = offer_date + 60
  WHERE application_id = (SELECT a.application_id FROM application a
                            JOIN drive d ON d.drive_id = a.drive_id JOIN student s ON s.student_id = a.student_id
                           WHERE d.job_role = 'Data Analyst' AND s.reg_no = 'CSE2024001');

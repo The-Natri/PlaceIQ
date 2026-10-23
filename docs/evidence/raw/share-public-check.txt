@@ -1,0 +1,70 @@
+Public link: https://hebrew-preston-greeting-magazines.trycloudflare.com
+
+$ curl -s $URL/api/health
+{"status":"ok"}
+
+
+$ POST /api/auth/admin/login with the demo password Admin@123
+{"error":"Invalid email or password"}
+ -> HTTP 401
+
+$ node tests/single_link_check.js   (BASE=public link, passwords from .env.public, read-only)
+PASS | Login page served at /login                                                                  | HTTP 200
+PASS | API on the same origin: GET /api/health                                                      | HTTP 200 {"status":"ok"}
+
+PASS | Student signs in and sees the dashboard                                                      | https://hebrew-preston-greeting-magazines.trycloudflare.com/student
+PASS | Placement probability shown (backend -> internal ML service)                                 | 95%
+PASS | Student sees eligible drives (read-only run, no application made)                            | 7 rows
+PASS | Refresh on a deep link (/student?tab=applications) keeps the page                            | 
+FAIL | Admin signs in and sees the drive list                                                       | 0 drives
+PASS | Refresh on a deep link (/admin/drives/6) loads the drive detail                              | 
+PASS | Analytics (timeline) loads by direct URL                                                     | 
+PASS | Unknown /api path is a JSON 404                                                              | HTTP 404
+PASS | Browser contacted no other origin or port                                                    | only https://hebrew-preston-greeting-magazines.trycloudflare.com
+PASS | No console or page errors                                                                    | 
+
+TOTAL: 11/12 passed  (https://hebrew-preston-greeting-magazines.trycloudflare.com)
+
+$ 12 wrong-password logins in a row (rate limit: 10 per 5 minutes per visitor)
+attempt  1 -> HTTP 401
+attempt  2 -> HTTP 401
+attempt  3 -> HTTP 401
+attempt  4 -> HTTP 401
+attempt  5 -> HTTP 401
+attempt  6 -> HTTP 401
+attempt  7 -> HTTP 401
+attempt  8 -> HTTP 429
+attempt  9 -> HTTP 429
+attempt 10 -> HTTP 429
+attempt 11 -> HTTP 429
+attempt 12 -> HTTP 429
+
+$ docker restart placeiq_app   (clears the in-memory rate limit after the burst above; PUBLIC_MODE stays 1)
+$ node tests/single_link_check.js   (re-run after making the test wait for the drive rows, which arrive after the heading over the slower tunnel)
+PASS | Login page served at /login                                                                  | HTTP 200
+PASS | API on the same origin: GET /api/health                                                      | HTTP 200 {"status":"ok"}
+
+PASS | Student signs in and sees the dashboard                                                      | https://hebrew-preston-greeting-magazines.trycloudflare.com/student
+PASS | Placement probability shown (backend -> internal ML service)                                 | 95%
+PASS | Student sees eligible drives (read-only run, no application made)                            | 7 rows
+PASS | Refresh on a deep link (/student?tab=applications) keeps the page                            | 
+PASS | Admin signs in and sees the drive list                                                       | 25 drives
+PASS | Refresh on a deep link (/admin/drives/6) loads the drive detail                              | 
+PASS | Analytics (timeline) loads by direct URL                                                     | 
+PASS | Unknown /api path is a JSON 404                                                              | HTTP 404
+PASS | Browser contacted no other origin or port                                                    | only https://hebrew-preston-greeting-magazines.trycloudflare.com
+PASS | No console or page errors                                                                    | 
+
+TOTAL: 12/12 passed  (https://hebrew-preston-greeting-magazines.trycloudflare.com)
+
+$ .\scripts\share.ps1 -Stop
+Stopped the tunnel. The public link no longer works.
+set_passwords: demo passwords set for 2 admin and 180 student accounts.
+Stopped PlaceIQ. Next local start uses the demo passwords again.
+
+$ curl the public link after stopping
+HTTP 530
+$ docker ps (PlaceIQ containers)
+none
+$ tasklist cloudflared.exe
+INFO: No tasks are running which match the specified criteria.

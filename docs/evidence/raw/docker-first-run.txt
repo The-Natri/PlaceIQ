@@ -1,0 +1,64 @@
+$ docker compose -p placeiq-verify up -d --build   (fresh volumes: first run)
+ Container placement_db  Creating
+ Container placement_db  Created
+ Container placeiq_app  Creating
+ Container placeiq_app  Created
+ Container placeiq_ml  Creating
+ Container placeiq_ml  Created
+ Container placement_db  Starting
+ Container placement_db  Started
+ Container placement_db  Waiting
+ Container placement_db  Healthy
+ Container placeiq_app  Starting
+ Container placeiq_app  Started
+ Container placeiq_app  Waiting
+ Container placeiq_app  Healthy
+ Container placeiq_ml  Starting
+ Container placeiq_ml  Started
+compose up exit 0 after 235s
+
+$ docker compose -p placeiq-verify ps
+placeiq_app	Up 2 minutes (healthy)	127.0.0.1:8080->8080/tcp
+placeiq_ml	Up About a minute (healthy)	
+placement_db	Up 2 minutes (healthy)	5432/tcp
+
+$ docker logs placeiq_app
+init_db: no tables yet, applying db/schema.sql
+init_db: loading the synthetic dataset (db/seed.py, about 1-3 minutes)...
+Dates are placed relative to 2026-10-22 (the database's current date).
+Clearing existing data (TRUNCATE ... RESTART IDENTITY CASCADE)...
+Inserted 6 departments.
+Inserted 2 coordinator/TPO accounts (tpo@campus.edu / coordinator@campus.edu, password: Admin@123).
+Inserted 28 skills.
+Inserted 18 companies.
+Inserted 180 students (with skills).
+Inserted 25 drives.
+Inserted 517 applications and 177 offers (placement_status trigger fired on each offer insert).
+Students marked 'Placed' by the trigger: 95 / 180
+Seeding complete.
+PlaceIQ is serving on http://localhost:8080
+
+$ docker logs placeiq_ml
+No trained model found — training one now from the current database...
+Dataset: 180 students (95 placed, 85 not placed)
+Training rows: 144, test rows: 36 (19 placed, 17 not placed)
+Train accuracy: 0.875
+Test accuracy:  0.750
+Test ROC-AUC:   0.774
+Confusion matrix on the test set (rows = actual, columns = predicted):
+                    pred Not Placed   pred Placed
+  actual Not Placed              12             5
+  actual Placed                   4            15
+Logistic-regression coefficients (log-odds per standard deviation):
+  cgpa           +1.496
+  backlogs       -1.136
+  skill_count    +0.819
+  dept_id_3      +0.782
+  dept_id_1      -0.637
+  dept_id_4      +0.531
+  dept_id_5      -0.314
+  dept_id_6      -0.180
+  dept_id_2      -0.178
+  (intercept)    +0.175
+Model saved to /models/model.joblib
+ML service listening on 0.0.0.0:6000 (internal)

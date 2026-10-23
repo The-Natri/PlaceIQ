@@ -1,5 +1,5 @@
 
-SQL*Plus: Release 21.0.0.0.0 - Production on Wed Oct 21 14:37:20 2026
+SQL*Plus: Release 21.0.0.0.0 - Production on Thu Oct 22 00:01:47 2026
 Version 21.3.0.0.0
 
 Copyright (c) 1982, 2021, Oracle.  All rights reserved.
@@ -87,6 +87,7 @@ SQL> --   -20001 not eligible	     -20002 drive closed      -20003 second accept
 SQL> --   -20004 drive not found	-20005 drive already closed
 SQL> --   -20006 offer on an application that isn't Selected
 SQL> --   -20007 illegal application status transition
+SQL> --   -20008 application after the drive's deadline, or dated in the future
 SQL> --
 SQL> -- SQL*PLUS MECHANICS: every PL/SQL block below (CREATE ... TRIGGER, CREATE
 SQL> -- ... FUNCTION) ends with a `/` on its own line. That is not a typo or an
@@ -328,15 +329,19 @@ SQL> CREATE TABLE drive (
   4  	 coordinator_id  NUMBER REFERENCES coordinator(coordinator_id),
   5  	 job_role	 VARCHAR2(100) NOT NULL,
   6  	 drive_date	 DATE NOT NULL,
-  7  	 package_lpa	 NUMBER(6,2) NOT NULL CHECK (package_lpa > 0),
-  8  	 min_cgpa	 NUMBER(4,2) DEFAULT 0 NOT NULL CHECK (min_cgpa BETWEEN 0 AND 10),
-  9  	 max_backlogs	 NUMBER DEFAULT 0 NOT NULL CHECK (max_backlogs >= 0),
- 10  	 drive_type	 VARCHAR2(20) DEFAULT 'Full-Time' NOT NULL
- 11  			     CHECK (drive_type IN ('Full-Time', 'Internship')),
- 12  	 status 	 VARCHAR2(20) DEFAULT 'Upcoming' NOT NULL
- 13  			     CHECK (status IN ('Upcoming', 'Ongoing', 'Completed', 'Cancelled')),
- 14  	 created_at	 TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
- 15  );
+  7  	 -- Last day to apply. Same-row rule, so a CHECK; the application-side
+  8  	 -- rule needs the drive's row too, so it is in trg_application_before_insert.
+  9  	 application_deadline DATE NOT NULL,
+ 10  	 CHECK (application_deadline <= drive_date),
+ 11  	 package_lpa	 NUMBER(6,2) NOT NULL CHECK (package_lpa > 0),
+ 12  	 min_cgpa	 NUMBER(4,2) DEFAULT 0 NOT NULL CHECK (min_cgpa BETWEEN 0 AND 10),
+ 13  	 max_backlogs	 NUMBER DEFAULT 0 NOT NULL CHECK (max_backlogs >= 0),
+ 14  	 drive_type	 VARCHAR2(20) DEFAULT 'Full-Time' NOT NULL
+ 15  			     CHECK (drive_type IN ('Full-Time', 'Internship')),
+ 16  	 status 	 VARCHAR2(20) DEFAULT 'Upcoming' NOT NULL
+ 17  			     CHECK (status IN ('Upcoming', 'Ongoing', 'Completed', 'Cancelled')),
+ 18  	 created_at	 TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+ 19  );
 
 Table created.
 
@@ -731,10 +736,11 @@ SQL> CREATE OR REPLACE FUNCTION fn_get_eligible_drives(
   8  	     SELECT d.*
   9  	       FROM drive d
  10  	      WHERE d.status IN ('Upcoming', 'Ongoing')
- 11  		AND fn_check_eligibility(p_student_id, d.drive_id) = 1;
- 12  	 RETURN v_cursor;
- 13  END fn_get_eligible_drives;
- 14  /
+ 11  		AND d.application_deadline >= TRUNC(SYSDATE)  -- still accepting applications
+ 12  		AND fn_check_eligibility(p_student_id, d.drive_id) = 1;
+ 13  	 RETURN v_cursor;
+ 14  END fn_get_eligible_drives;
+ 15  /
 
 Function created.
 
@@ -833,23 +839,38 @@ SQL> CREATE OR REPLACE TRIGGER trg_application_before_insert
   3  FOR EACH ROW
   4  DECLARE
   5  	 v_drive_status drive.status%TYPE;
-  6  BEGIN
-  7  	 SELECT status INTO v_drive_status FROM drive WHERE drive_id = :NEW.drive_id;
-  8  
-  9  	 IF v_drive_status IN ('Completed', 'Cancelled') THEN
- 10  	     RAISE_APPLICATION_ERROR(-20002,
- 11  		 'Drive ' || :NEW.drive_id || ' is ' || v_drive_status || ' and no longer accepts applications');
- 12  	 END IF;
- 13  
- 14  	 IF fn_check_eligibility(:NEW.student_id, :NEW.drive_id) = 0 THEN
- 15  	     RAISE_APPLICATION_ERROR(-20001,
- 16  		 'Student ' || :NEW.student_id || ' is not eligible for drive ' || :NEW.drive_id);
- 17  	 END IF;
- 18  EXCEPTION
- 19  	 WHEN NO_DATA_FOUND THEN
- 20  	     NULL;  -- nonexistent drive: let the drive_id foreign key report it
- 21  END;
- 22  /
+  6  	 v_deadline	drive.application_deadline%TYPE;
+  7  BEGIN
+  8  	 SELECT status, application_deadline INTO v_drive_status, v_deadline
+  9  	   FROM drive WHERE drive_id = :NEW.drive_id;
+ 10  
+ 11  	 IF v_drive_status IN ('Completed', 'Cancelled') THEN
+ 12  	     RAISE_APPLICATION_ERROR(-20002,
+ 13  		 'Drive ' || :NEW.drive_id || ' is ' || v_drive_status || ' and no longer accepts applications');
+ 14  	 END IF;
+ 15  
+ 16  	 -- Date integrity, as in the Postgres version: the row's own applied_at
+ 17  	 -- (not SYSDATE) is checked, so explicit dates are held to the rule too.
+ 18  	 -- TRUNC drops the time of day, like ::DATE in Postgres.
+ 19  	 IF :NEW.applied_at > CURRENT_TIMESTAMP THEN
+ 20  	     RAISE_APPLICATION_ERROR(-20008,
+ 21  		 'Application date ' || TO_CHAR(:NEW.applied_at, 'YYYY-MM-DD HH24:MI') || ' is in the future');
+ 22  	 END IF;
+ 23  
+ 24  	 IF TRUNC(CAST(:NEW.applied_at AS DATE)) > v_deadline THEN
+ 25  	     RAISE_APPLICATION_ERROR(-20008,
+ 26  		 'Applications for drive ' || :NEW.drive_id || ' closed on ' || TO_CHAR(v_deadline, 'YYYY-MM-DD'));
+ 27  	 END IF;
+ 28  
+ 29  	 IF fn_check_eligibility(:NEW.student_id, :NEW.drive_id) = 0 THEN
+ 30  	     RAISE_APPLICATION_ERROR(-20001,
+ 31  		 'Student ' || :NEW.student_id || ' is not eligible for drive ' || :NEW.drive_id);
+ 32  	 END IF;
+ 33  EXCEPTION
+ 34  	 WHEN NO_DATA_FOUND THEN
+ 35  	     NULL;  -- nonexistent drive: let the drive_id foreign key report it
+ 36  END;
+ 37  /
 
 Trigger created.
 
@@ -1320,17 +1341,21 @@ SQL> --   Software Engineer	    - strict (8.00 CGPA, 0 backlogs), CSE/ISE only
 SQL> --   Associate Engineer	    - easy (6.50 CGPA, 1 backlog), open to all branches
 SQL> --   Graduate Engineer Trainee - MECH only; closed by sp_close_drive in the demo
 SQL> --   Data Analyst		    - finished earlier in the season
-SQL> INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, package_lpa, min_cgpa, max_backlogs, drive_type, status)
-  2  SELECT company_id, 1, 'Software Engineer', DATE '2026-02-10', 18.00, 8.00, 0, 'Full-Time', 'Ongoing'
+SQL> -- Dates are relative to today (TRUNC(SYSDATE)), like db/seed.py, so the
+SQL> -- demo always satisfies the date rules: open drives still take
+SQL> -- applications, and the finished drive's whole timeline is in the past.
+SQL> -- Deadline <= drive date is a CHECK; applying after the deadline is -20008.
+SQL> INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, application_deadline, package_lpa, min_cgpa, max_backlogs, drive_type, status)
+  2  SELECT company_id, 1, 'Software Engineer', TRUNC(SYSDATE) + 14, TRUNC(SYSDATE) + 10, 18.00, 8.00, 0, 'Full-Time', 'Ongoing'
   3    FROM company WHERE company_name = 'Nimbus Cloud Systems';
-SQL> INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, package_lpa, min_cgpa, max_backlogs, drive_type, status)
-  2  SELECT company_id, 1, 'Associate Engineer', DATE '2026-02-15', 6.50, 6.50, 1, 'Full-Time', 'Ongoing'
+SQL> INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, application_deadline, package_lpa, min_cgpa, max_backlogs, drive_type, status)
+  2  SELECT company_id, 1, 'Associate Engineer', TRUNC(SYSDATE) + 21, TRUNC(SYSDATE) + 15, 6.50, 6.50, 1, 'Full-Time', 'Ongoing'
   3    FROM company WHERE company_name = 'Coral Bay Solutions';
-SQL> INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, package_lpa, min_cgpa, max_backlogs, drive_type, status)
-  2  SELECT company_id, 1, 'Graduate Engineer Trainee', DATE '2026-02-20', 7.20, 7.00, 1, 'Full-Time', 'Ongoing'
+SQL> INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, application_deadline, package_lpa, min_cgpa, max_backlogs, drive_type, status)
+  2  SELECT company_id, 1, 'Graduate Engineer Trainee', TRUNC(SYSDATE) + 28, TRUNC(SYSDATE) + 20, 7.20, 7.00, 1, 'Full-Time', 'Ongoing'
   3    FROM company WHERE company_name = 'Granite Motors';
-SQL> INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, package_lpa, min_cgpa, max_backlogs, drive_type, status)
-  2  SELECT company_id, 1, 'Data Analyst', DATE '2025-12-05', 14.00, 7.50, 0, 'Full-Time', 'Ongoing'
+SQL> INSERT INTO drive (company_id, coordinator_id, job_role, drive_date, application_deadline, package_lpa, min_cgpa, max_backlogs, drive_type, status)
+  2  SELECT company_id, 1, 'Data Analyst', TRUNC(SYSDATE) - 60, TRUNC(SYSDATE) - 65, 14.00, 7.50, 0, 'Full-Time', 'Ongoing'
   3    FROM company WHERE company_name = 'Nimbus Cloud Systems';
 SQL> 
 SQL> INSERT INTO drive_eligible_dept (drive_id, dept_id)
@@ -1340,14 +1365,18 @@ SQL> INSERT INTO drive_eligible_dept (drive_id, dept_id)
   2  SELECT d.drive_id, dp.dept_id FROM drive d, department dp
   3   WHERE d.job_role = 'Graduate Engineer Trainee' AND dp.dept_code = 'MECH';
 SQL> 
-SQL> -- Applications (student reg_no -> drive job_role)
-SQL> INSERT INTO application (student_id, drive_id)
-  2  SELECT s.student_id, d.drive_id FROM student s, drive d
-  3   WHERE (s.reg_no, d.job_role) IN (
-  4  	     ('CSE2024001', 'Data Analyst'), ('ISE2024003', 'Data Analyst'), ('CSE2024007', 'Data Analyst'),
-  5  	     ('CSE2024001', 'Software Engineer'), ('CSE2024007', 'Software Engineer'), ('ISE2024003', 'Software Engineer'),
-  6  	     ('CSE2024002', 'Associate Engineer'), ('ISE2024008', 'Associate Engineer'), ('MEC2024005', 'Associate Engineer'),
-  7  	     ('MEC2024005', 'Graduate Engineer Trainee'), ('MEC2024009', 'Graduate Engineer Trainee'));
+SQL> -- Applications (student reg_no -> drive job_role). Each is dated a few days
+SQL> -- before its drive's deadline, or two days ago for the open drives; never
+SQL> -- after the deadline and never in the future (-20008).
+SQL> INSERT INTO application (student_id, drive_id, applied_at)
+  2  SELECT s.student_id, d.drive_id,
+  3  	    CAST(LEAST(d.application_deadline - 5, TRUNC(SYSDATE) - 2) AS TIMESTAMP) + INTERVAL '10' HOUR
+  4    FROM student s, drive d
+  5   WHERE (s.reg_no, d.job_role) IN (
+  6  	     ('CSE2024001', 'Data Analyst'), ('ISE2024003', 'Data Analyst'), ('CSE2024007', 'Data Analyst'),
+  7  	     ('CSE2024001', 'Software Engineer'), ('CSE2024007', 'Software Engineer'), ('ISE2024003', 'Software Engineer'),
+  8  	     ('CSE2024002', 'Associate Engineer'), ('ISE2024008', 'Associate Engineer'), ('MEC2024005', 'Associate Engineer'),
+  9  	     ('MEC2024005', 'Graduate Engineer Trainee'), ('MEC2024009', 'Graduate Engineer Trainee'));
 SQL> 
 SQL> -- Walk applications through the pipeline, one legal step per UPDATE.
 SQL> -- (Each step is also recorded by trg_application_status_audit.)
@@ -1376,10 +1405,10 @@ SQL> UPDATE application SET status = 'Shortlisted'
   3  	AND student_id = (SELECT student_id FROM student WHERE reg_no = 'MEC2024005');
 SQL> 
 SQL> INSERT INTO interview_round (application_id, round_number, round_type, round_date, result)
-  2  SELECT a.application_id, 1, 'Aptitude', DATE '2025-12-06', 'Pass'
+  2  SELECT a.application_id, 1, 'Aptitude', d.drive_date, 'Pass'
   3    FROM application a JOIN drive d ON d.drive_id = a.drive_id WHERE d.job_role = 'Data Analyst';
 SQL> INSERT INTO interview_round (application_id, round_number, round_type, round_date, result)
-  2  SELECT a.application_id, 2, 'Technical', DATE '2025-12-08',
+  2  SELECT a.application_id, 2, 'Technical', d.drive_date + 1,
   3  	    CASE WHEN s.reg_no = 'CSE2024007' THEN 'Fail' ELSE 'Pass' END
   4    FROM application a JOIN drive d ON d.drive_id = a.drive_id JOIN student s ON s.student_id = a.student_id
   5   WHERE d.job_role = 'Data Analyst';
@@ -1387,11 +1416,11 @@ SQL>
 SQL> -- Offers for the two Selected Data Analyst applicants (inserted Pending, as
 SQL> -- the backend does; trg_offer_after_insert marks both students Placed).
 SQL> INSERT INTO offer (application_id, offered_package_lpa, offer_date)
-  2  SELECT a.application_id, 15.00, DATE '2025-12-12'
+  2  SELECT a.application_id, 15.00, d.drive_date + 3
   3    FROM application a JOIN drive d ON d.drive_id = a.drive_id JOIN student s ON s.student_id = a.student_id
   4   WHERE d.job_role = 'Data Analyst' AND s.reg_no = 'CSE2024001';
 SQL> INSERT INTO offer (application_id, offered_package_lpa, offer_date)
-  2  SELECT a.application_id, 14.50, DATE '2025-12-12'
+  2  SELECT a.application_id, 14.50, d.drive_date + 3
   3    FROM application a JOIN drive d ON d.drive_id = a.drive_id JOIN student s ON s.student_id = a.student_id
   4   WHERE d.job_role = 'Data Analyst' AND s.reg_no = 'ISE2024003';
 SQL> 
@@ -1402,7 +1431,7 @@ SQL> UPDATE application SET status = 'Offer_Made'
   2   WHERE application_id IN (SELECT application_id FROM offer);
 SQL> 
 SQL> -- Aisha accepts her offer (Kavya's stays Pending for the transaction demo).
-SQL> UPDATE offer SET status = 'Accepted', joining_date = DATE '2026-02-10'
+SQL> UPDATE offer SET status = 'Accepted', joining_date = offer_date + 60
   2   WHERE application_id = (SELECT a.application_id FROM application a
   3  				JOIN drive d ON d.drive_id = a.drive_id JOIN student s ON s.student_id = a.student_id
   4  			       WHERE d.job_role = 'Data Analyst' AND s.reg_no = 'CSE2024001');
@@ -1446,7 +1475,7 @@ SQL> -- What it shows, in order:
 SQL> --   1. Stored function   fn_check_eligibility (eligible / ineligible / missing)
 SQL> --   2. Set-returning fn  fn_get_eligible_drives (REF CURSOR)
 SQL> --   3. Triggers firing   placement status on offer insert + audit log
-SQL> --   4. Rule triggers	  five invalid writes, each refused with its own error
+SQL> --   4. Rule triggers	  six invalid writes, each refused with its own error
 SQL> --   5. Procedure	       sp_close_drive (OUT parameter)
 SQL> --   6. Views	       analytics, window functions, materialized view
 SQL> --   7. Transaction	  the offer-accept statements, undone with ROLLBACK
@@ -1566,10 +1595,10 @@ SQL> COLUMN company_id FORMAT 99
 SQL> COLUMN coordinator_id FORMAT 99
 SQL> PRINT rc
 
-DRIVE_ID COMPANY_ID COORDINATOR_ID JOB_ROLE                   DRIVE_DATE         PACKAGE_LPA   MIN_CGPA MAX_BACKLOGS DRIVE_TYPE STATUS               CREATED_AT
--------- ---------- -------------- -------------------------- ------------------ ----------- ---------- ------------ ---------- -------------------- ----------------------------
-       2          2              1 Associate Engineer         15-FEB-26                  6.5        6.5            1 Full-Time  Ongoing              21-OCT-26 02.37.27.552530 PM
-       3          3              1 Graduate Engineer Trainee  20-FEB-26                  7.2          7            1 Full-Time  Ongoing              21-OCT-26 02.37.27.554313 PM
+DRIVE_ID COMPANY_ID COORDINATOR_ID JOB_ROLE                   DRIVE_DATE         APPLICATION_DEADLI PACKAGE_LPA   MIN_CGPA MAX_BACKLOGS DRIVE_TYPE STATUS               CREATED_AT
+-------- ---------- -------------- -------------------------- ------------------ ------------------ ----------- ---------- ------------ ---------- -------------------- ----------------------------
+       2          2              1 Associate Engineer         12-NOV-26          06-NOV-26                  6.5        6.5            1 Full-Time  Ongoing              22-OCT-26 12.01.54.876857 AM
+       3          3              1 Graduate Engineer Trainee  19-NOV-26          11-NOV-26                  7.2          7            1 Full-Time  Ongoing              22-OCT-26 12.01.54.878220 AM
 
 2 rows selected.
 
@@ -1647,7 +1676,7 @@ INSERT INTO application (student_id, drive_id) VALUES (         4,          1)
             *
 ERROR at line 1:
 ORA-20001: Student 4 is not eligible for drive 1
-ORA-06512: at "PLACEIQ.TRG_APPLICATION_BEFORE_INSERT", line 12
+ORA-06512: at "PLACEIQ.TRG_APPLICATION_BEFORE_INSERT", line 27
 ORA-04088: error during execution of trigger 'PLACEIQ.TRG_APPLICATION_BEFORE_INSERT'
 
 
@@ -1659,7 +1688,7 @@ INSERT INTO application (student_id, drive_id) VALUES (         8,          4)
             *
 ERROR at line 1:
 ORA-20002: Drive 4 is Completed and no longer accepts applications
-ORA-06512: at "PLACEIQ.TRG_APPLICATION_BEFORE_INSERT", line 7
+ORA-06512: at "PLACEIQ.TRG_APPLICATION_BEFORE_INSERT", line 9
 ORA-04088: error during execution of trigger 'PLACEIQ.TRG_APPLICATION_BEFORE_INSERT'
 
 
@@ -1726,6 +1755,40 @@ SQL> SELECT o.offer_id, o.status, o.offered_package_lpa FROM offer o WHERE o.app
   OFFER_ID STATUS               OFFERED_PACKAGE_LPA
 ---------- -------------------- -------------------
          4 Pending                               18
+
+1 row selected.
+
+SQL> 
+SQL> PROMPT  4f. The Associate Engineer deadline is moved to yesterday (inside a
+4f. The Associate Engineer deadline is moved to yesterday (inside a
+SQL> PROMPT      savepoint). Aisha is eligible, but she is now too late -> ORA-20008
+savepoint). Aisha is eligible, but she is now too late -> ORA-20008
+SQL> SAVEPOINT before_deadline;
+
+Savepoint created.
+
+SQL> UPDATE drive SET application_deadline = TRUNC(SYSDATE) - 1 WHERE drive_id = &ae_id;
+
+1 row updated.
+
+SQL> INSERT INTO application (student_id, drive_id) VALUES (&aisha_id, &ae_id);
+INSERT INTO application (student_id, drive_id) VALUES (         1,          2)
+            *
+ERROR at line 1:
+ORA-20008: Applications for drive 2 closed on 2026-10-21
+ORA-06512: at "PLACEIQ.TRG_APPLICATION_BEFORE_INSERT", line 22
+ORA-04088: error during execution of trigger 'PLACEIQ.TRG_APPLICATION_BEFORE_INSERT'
+
+
+SQL> ROLLBACK TO SAVEPOINT before_deadline;
+
+Rollback complete.
+
+SQL> SELECT application_deadline FROM drive WHERE drive_id = &ae_id;
+
+APPLICATION_DEADLI
+------------------
+06-NOV-26
 
 1 row selected.
 
@@ -1857,30 +1920,24 @@ SQL> SELECT TO_CHAR(month, 'YYYY-MM') AS month, offers_in_month, cumulative_offe
 
 MONTH      OFFERS_IN_MONTH CUMULATIVE_OFFERS CHANGE_FROM_PREV_MONTH
 ---------- --------------- ----------------- ----------------------
-2025-12                  2                 2
-2026-01                  0                 2                     -2
-2026-02                  0                 2                      0
-2026-03                  0                 2                      0
-2026-04                  0                 2                      0
-2026-05                  0                 2                      0
-2026-06                  0                 2                      0
-2026-07                  0                 2                      0
-2026-08                  0                 2                      0
-2026-09                  0                 2                      0
+2026-08                  2                 2
+2026-09                  0                 2                     -2
 2026-10                  2                 4                      2
 
-11 rows selected.
+3 rows selected.
 
 SQL> 
-SQL> PROMPT  6e. Same view with one offer moved to February: January has no offers
-6e. Same view with one offer moved to February: January has no offers
-SQL> PROMPT      but still appears as a 0 row, so LAG compares real consecutive months
-but still appears as a 0 row, so LAG compares real consecutive months
+SQL> PROMPT  6e. Same view with one offer moved two months earlier: the month in
+6e. Same view with one offer moved two months earlier: the month in
+SQL> PROMPT      between has no offers but still appears as a 0 row, so LAG compares
+between has no offers but still appears as a 0 row, so LAG compares
+SQL> PROMPT      real consecutive months
+real consecutive months
 SQL> SAVEPOINT before_gap;
 
 Savepoint created.
 
-SQL> UPDATE offer SET offer_date = DATE '2026-02-12' WHERE offered_package_lpa = 14.50;
+SQL> UPDATE offer SET offer_date = ADD_MONTHS(offer_date, -2) WHERE offered_package_lpa = 14.50;
 
 1 row updated.
 
@@ -1889,27 +1946,21 @@ SQL> SELECT TO_CHAR(month, 'YYYY-MM') AS month, offers_in_month, cumulative_offe
 
 MONTH      OFFERS_IN_MONTH CUMULATIVE_OFFERS CHANGE_FROM_PREV_MONTH
 ---------- --------------- ----------------- ----------------------
-2025-12                  1                 1
-2026-01                  0                 1                     -1
-2026-02                  1                 2                      1
-2026-03                  0                 2                     -1
-2026-04                  0                 2                      0
-2026-05                  0                 2                      0
-2026-06                  0                 2                      0
-2026-07                  0                 2                      0
-2026-08                  0                 2                      0
-2026-09                  0                 2                      0
+2026-06                  1                 1
+2026-07                  0                 1                     -1
+2026-08                  1                 2                      1
+2026-09                  0                 2                     -1
 2026-10                  2                 4                      2
 
-11 rows selected.
+5 rows selected.
 
 SQL> ROLLBACK TO SAVEPOINT before_gap;
 
 Rollback complete.
 
 SQL> 
-SQL> PROMPT  6e. Materialized view - a stored snapshot. It still shows the data as of
-6e. Materialized view - a stored snapshot. It still shows the data as of
+SQL> PROMPT  6f. Materialized view - a stored snapshot. It still shows the data as of
+6f. Materialized view - a stored snapshot. It still shows the data as of
 SQL> PROMPT      its last refresh: Meera's and Aisha's new offers from this session
 its last refresh: Meera's and Aisha's new offers from this session
 SQL> PROMPT      are in OFFER but NOT in the snapshot yet.
@@ -2053,7 +2104,7 @@ SQL> SELECT TO_CHAR(MAX(refreshed_at), 'YYYY-MM-DD HH24:MI:SS') AS refreshed_at 
 
 REFRESHED_AT
 -----------------------------------
-2026-10-21 14:37:28
+2026-10-22 00:01:55
 
 1 row selected.
 
@@ -2065,7 +2116,7 @@ SQL> SELECT TO_CHAR(MAX(refreshed_at), 'YYYY-MM-DD HH24:MI:SS') AS refreshed_at 
 
 REFRESHED_AT
 -----------------------------------
-2026-10-21 14:37:28
+2026-10-22 00:01:56
 
 1 row selected.
 

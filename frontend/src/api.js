@@ -2,7 +2,11 @@
 // handling so every page doesn't repeat the same try/fetch/parse boilerplate.
 // Deliberately no axios/react-query here — this is the "minimal, functional
 // base" layer; swap this out freely, it's a tiny surface.
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+// Relative by default: the backend serves this app and the API from one
+// origin, so "/api" always points at the right server, on any host or port
+// (localhost:8080, a tunnel URL, a deployed site). VITE_API_URL only needs
+// setting if the API is hosted somewhere else.
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 function getToken() {
   return localStorage.getItem("token");

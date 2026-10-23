@@ -304,14 +304,17 @@ P("Campus placement in most colleges is still coordinated through spreadsheets, 
   "enforce those rules **inside the database**. A PostgreSQL 16 schema of 13 tables in third normal form "
   "carries six triggers, two stored functions, one stored procedure, six views (three of them built on "
   "window functions) and a materialized view. Invalid writes are refused by the database itself with "
-  "custom error codes (PL001–PL007), whether they come from the web application or from a raw SQL "
-  "session. A Flask backend written with plain SQL (psycopg2, no ORM) exposes 36 REST endpoints, runs offer "
+  "custom error codes (PL001–PL008), whether they come from the web application or from a raw SQL "
+  "session; one of them keeps every application on or before its drive's deadline. A Flask backend written with plain SQL (psycopg2, no ORM) exposes 36 REST endpoints, runs offer "
   "acceptance as an explicit transaction, and serves a React front end with a student portal, an admin "
   "console and an analytics dashboard. A logistic-regression model estimates each student's placement "
-  "probability. The schema was also ported to Oracle 21c and run end to end in SQL*Plus.")
+  "probability. The schema was also ported to Oracle 21c and run end to end in SQL*Plus. The whole "
+  "system is served from one address (http://localhost:8080): with one Docker command, as a Windows "
+  "desktop app, or on a temporary public link.")
 P("On a synthetic dataset of 180 students, 25 drives and 517 applications, an end-to-end smoke test "
-  "passed 41 of 41 checks, an automated check of the API documentation passed 161 of 161, and a browser "
-  "walkthrough of the user interface passed 28 of 28. Every business rule was shown to be refused at the "
+  "passed 48 of 48 checks, an automated check of the API documentation passed 161 of 161, and browser "
+  "checks through the single address passed 12 of 12 in each way of running it. All 10 date-ordering "
+  "rules hold with zero violations. Every business rule was shown to be refused at the "
   "database level, including two simultaneous offer acceptances, which the trigger's row lock serialized. "
   "On a 250,000-application benchmark database the indexes cut query time by between 1.8× and 81×. The "
   "placement model reached a test accuracy of 0.750 and a ROC-AUC of 0.774, but on a test set of only 36 "
@@ -388,6 +391,8 @@ bullets([
     "Measure the effect of the indexes with EXPLAIN ANALYZE on a realistically sized dataset.",
     "Integrate a small, explainable placement-probability model and report its accuracy honestly.",
     "Port the database layer to Oracle and run it end to end in SQL*Plus.",
+    "Deliver the system from a single address, startable with one command, as a desktop app or on a "
+    "shareable link, using only free tools.",
 ])
 
 H("1.4  Scope", 2)
@@ -421,6 +426,7 @@ table("Components and technologies", ["Tier", "Technology", "Responsibility"], [
     ["Application", "Python, Flask 3.0, psycopg2 (no ORM), PyJWT, bcrypt", "36 REST endpoints, authentication, role checks, offer transactions"],
     ["Data", "PostgreSQL 16 (Docker)", "13 tables, 6 triggers, 2 functions, 1 procedure, 6 views, 1 materialized view"],
     ["Prediction", "Flask, scikit-learn, pandas", "Trains the model from the database and serves POST /predict"],
+    ["Delivery", "waitress, Docker Compose, Electron, Cloudflare quick tunnel", "One port for UI and API; one-command start; desktop app; public link"],
     ["Oracle port", "Oracle Database 21c XE, SQL*Plus", "The same schema and rules in PL/SQL"],
 ], widths=[3, 5.5, 7.5])
 P("The backend deliberately uses raw SQL rather than an object-relational mapper. Every query the system "
@@ -440,7 +446,7 @@ table("Tables", ["Table", "Purpose", "Key constraints"], [
     ["student", "Profile, CGPA, backlogs, placement status", "UNIQUE reg. no. and e-mail; CHECK 0 ≤ CGPA ≤ 10; FK department"],
     ["skill, student_skill", "Skills and who holds them (M:N)", "Composite PK (student, skill)"],
     ["company", "Recruiters", "UNIQUE name"],
-    ["drive", "One recruitment posting with its cutoffs", "FK company, coordinator; CHECK status, type"],
+    ["drive", "One recruitment posting with its cutoffs and application deadline", "FK company, coordinator; CHECK status, type, deadline ≤ drive date"],
     ["drive_eligible_dept", "Branches a drive is open to (M:N)", "Composite PK (drive, department)"],
     ["application", "A student's application to a drive", "UNIQUE (student, drive); CHECK status"],
     ["interview_round", "Rounds of one application", "UNIQUE (application, round no.)"],
@@ -467,11 +473,18 @@ table("Database-enforced rules", ["Code", "Trigger / routine", "Rule", "HTTP"], 
     ["PL005", "sp_close_drive", "A drive can be closed only once", "409"],
     ["PL006", "trg_offer_requires_selected", "An offer can be recorded only for a Selected application", "409"],
     ["PL007", "trg_application_status_transition", "Applications move only forward through the pipeline", "409"],
+    ["PL008", "trg_application_before_insert", "An application is dated on or before the drive's deadline, and not in the future", "409"],
 ], widths=[1.6, 5.4, 7.4, 1.6])
 P("The legal status transitions form a small state machine: Applied → Shortlisted / Interview_Scheduled / "
   "Rejected; Shortlisted → Interview_Scheduled / Selected / Rejected; Interview_Scheduled → Selected / "
   "Rejected; Selected → Offer_Made / Rejected. Offer_Made and Rejected are final. A CHECK constraint cannot "
   "express this rule because it sees only the new value. The trigger compares `OLD.status` with `NEW.status`.")
+P("**Dates.** Each drive has an `application_deadline`. \"Deadline on or before the drive date\" involves "
+  "one row, so it is a CHECK constraint. \"An application is dated on or before its drive's deadline, and "
+  "not in the future\" involves two tables and the clock, so it is part of the application guard trigger "
+  "(PL008). The database's time zone is set to Asia/Kolkata in `schema.sql`, so a deadline means the end "
+  "of that day on the college's calendar. In UTC, applications would still be accepted until 05:30 the "
+  "next morning. A smoke-test failure exposed this, and the setting fixes it.")
 P("Two AFTER triggers maintain derived data. `trg_offer_after_insert` marks a student Placed when an offer "
   "is recorded. `trg_application_status_audit` writes one `application_status_history` row for every status "
   "change, so no code path can change a status without leaving a record.")
@@ -531,7 +544,7 @@ P("The schema was ported to Oracle Database 21c Express Edition (`db/schema_orac
   "in a single SQL*Plus session (`db/oracle_full_run.sql`). The main differences are:")
 bullets([
     "Identity columns are implemented with sequences and BEFORE INSERT triggers.",
-    "Rule violations are raised with `RAISE_APPLICATION_ERROR` (−20001 to −20007) instead of custom SQLSTATEs.",
+    "Rule violations are raised with `RAISE_APPLICATION_ERROR` (−20001 to −20008) instead of custom SQLSTATEs.",
     "The materialized view is built `REFRESH COMPLETE ON DEMAND`.",
     "Identifiers are shortened to Oracle's 30-character limit.",
     "Rule PL003 is a COMPOUND trigger [16]. A row-level trigger on `offer` cannot query `offer` itself "
@@ -552,19 +565,48 @@ P("**Dataset.** No real student data was used. `db/seed.py` generates a determin
   "180 students (30 in each of six departments), 18 companies, 25 drives, 517 applications and 177 offers, "
   "after which 95 students (52.8%) are Placed. The seed moves every application through legal status steps, "
   "so the audit trigger logged 1,177 status changes. Offers are made with a probability that rises with "
-  "CGPA margin and skill count and falls with backlogs, so the dataset has a learnable signal.")
+  "CGPA margin and skill count and falls with backlogs, so the dataset has a learnable signal. Every date "
+  "is placed relative to the day the data is loaded (22 October 2026 for the evidence): completed drives "
+  "fall in the past six months, open drives still take applications, and each application, interview "
+  "round, offer and status change follows the one before it. The dates use their own random generator, "
+  "so who is placed, and therefore the model, is identical however the dates are arranged.")
 P("**Tests and measurements.**")
 bullets([
-    "**Smoke test** (`tests/smoke_test.py`): 41 checks through the API and directly against the "
+    "**Smoke test** (`tests/smoke_test.py`): 48 checks through the API and directly against the "
     "database. It runs on a throwaway copy of the database, built and dropped by `tests/run_smoke_test.sh`.",
     "**API contract check** (`tests/api_contract_check.py`): parses `docs/API.md` and calls every "
     "documented endpoint, comparing status codes and response fields.",
-    "**UI walkthrough** (`tests/ui_walkthrough.js`): Playwright drives the real interface through each flow.",
+    "**Browser checks** (`tests/single_link_check.js`, `tests/desktop_check.js`): headless Chromium signs in as "
+    "a student and as the admin through the single address, in each way of running the system, and checks "
+    "that no other origin is contacted. The Electron app is driven the same way.",
     "**Index benchmark** (`db/demos/index_benchmark.py`): a separate database of 50,000 students, 2,000 drives "
     "and 250,000 applications. Each query's median time over 7 warm runs is measured with and without the indexes.",
     "**SQL evidence**: every query, trigger and transaction was run in psql. Anything that changed data ran "
     "inside a transaction that was rolled back. The unedited output is in `docs/evidence/`.",
 ])
+
+H("2.9  Deployment", 2)
+P("**One address.** The backend serves the built React app and the API from the same origin and port "
+  "(http://localhost:8080) through waitress, a production WSGI server that also runs on Windows [17]. "
+  "Any path that is not a file returns `index.html`, so refreshing works on every page, and the browser "
+  "needs no CORS. The ML service listens only on the machine itself (or the private container network), "
+  "and the backend calls it there.")
+P("**One command.** `docker compose up -d --build` [18] starts three containers: Postgres, the app and the "
+  "ML service. Only the app publishes a port, and only on 127.0.0.1. On the first start the app container "
+  "creates the tables, loads the synthetic data and generates a JWT secret into its own volume, and the ML "
+  "container trains the model from the database. In this project's run, this took 235 seconds from nothing "
+  "and gave the same model results as Section 3.6. `start.ps1` and `start.sh` do the same with "
+  "local Python environments; they check that Docker is running and say so clearly if it is not.")
+P("**Desktop app.** A small Electron app [19] (Figure 4) checks Docker, offers Retry if it is not "
+  "running, starts the same stack with a loading screen, shows PlaceIQ in its window and stops the "
+  "stack when closed. It is packaged with electron-builder as a portable Windows .exe. It needs Docker "
+  "Desktop and does not bundle it.")
+P("**Sharing.** `scripts/share.ps1` opens a Cloudflare quick tunnel [20] (free, no account) and prints a "
+  "temporary https address. In this public mode the backend refuses to start without a strong secret, "
+  "the documented demo passwords are replaced by private ones kept in a git-ignored file, and logins "
+  "are rate-limited to 10 per 5 minutes per visitor. `DEPLOY_FREE.md` describes a permanent free option "
+  "(Render with Neon Postgres) and its limits, as steps for the team to take; it was not deployed.")
+figure(SHOTS / "15-desktop-app.png", "The desktop app's window, showing the placement-office console", width=Cm(14))
 
 # --------------------------------------------------------------------------
 # 3 Results and Discussion
@@ -575,11 +617,15 @@ P("All figures in this chapter are copied from the evidence files in `docs/evide
 
 H("3.1  Functional Verification", 2)
 table("Verification results", ["Check", "Result", "Evidence"], [
-    ["End-to-end smoke test (API and database)", "41 / 41 passed", "smoke-test.md"],
+    ["End-to-end smoke test (API and database)", "48 / 48 passed", "smoke-test.md"],
     ["API documentation vs. running backend (36 endpoints)", "161 / 161 passed", "raw/api-contract-check.txt"],
-    ["Browser walkthrough of the UI", "28 / 28 passed", "raw/ui-walkthrough.txt"],
+    ["Date-ordering rules over all seeded data", "10 rules, 0 violations", "date-integrity.md"],
+    ["Single address, Docker stack (fresh start)", "12 / 12 passed", "raw/single-link-docker.txt"],
+    ["Single address, local start script", "12 / 12 passed", "raw/single-link-venv.txt"],
+    ["Single address, public Cloudflare link", "12 / 12 passed; demo password refused; 429 after 10 logins", "raw/share-public-check.txt"],
+    ["Packaged desktop app", "8 / 8 passed; nothing left after quit", "raw/desktop-app-check.txt"],
     ["Oracle schema in SQL*Plus", "82 objects, all VALID; no compilation errors", "sqlplus-transcript.txt"],
-    ["Oracle rule triggers", "All 6 intended ORA-200xx errors raised, no others", "sqlplus-transcript.txt"],
+    ["Oracle rule triggers", "All 7 intended ORA-200xx errors raised, no others", "sqlplus-transcript.txt"],
 ], widths=[7, 5, 4])
 
 H("3.2  Rules Enforced by the Database", 2)
@@ -593,6 +639,7 @@ table("Rule violations sent directly to the database", ["Statement (summary)", "
     ["Insert an offer for application 1 (Rejected)", "Application 1 is Rejected; an offer can only be recorded for a Selected application", "PL006"],
     ["Move application 1 from Rejected to Applied", "Application 1 cannot move from Rejected to Applied", "PL007"],
     ["Move application 2 from Offer_Made to Shortlisted", "Application 2 cannot move from Offer_Made to Shortlisted", "PL007"],
+    ["Student 69 applies to drive 1 after its deadline was moved to yesterday", "Applications for drive 1 closed on 2026-10-21", "PL008"],
 ], widths=[6.5, 7.5, 2])
 P("The function `fn_check_eligibility` was checked against an independently computed reason for four real "
   "student–drive pairs (`queries.md`). It returned true for the pair meeting every rule. It returned false "
@@ -602,11 +649,18 @@ P("The function `fn_check_eligibility` was checked against an independently comp
   "marked it Completed, and the audit trigger logged all 37 changes. The demonstration was then rolled back, "
   "and the drive was again Ongoing.")
 
+P("**Date integrity.** Ten ordering rules were counted over all seeded data (`date-integrity.md`). "
+  "Applications are on or before their deadline and never in the future; rounds come after the "
+  "application; finished rounds and offers are in the past; each offer follows the final round; and status "
+  "changes come after the application and in the order they were logged. Every rule had 0 violations. "
+  "The database also refused, with PL008, an application after a deadline and one dated an hour ahead, and "
+  "the CHECK refused a deadline after the drive date.")
+
 H("3.3  Transactions and Concurrency", 2)
 P("The offer transactions were run through the real backend with the database state read before and after "
   "each call (`transaction.md`):")
 bullets([
-    "**Accept**: offer 178 went from Pending to Accepted with a joining date of 2026-12-20, and the history "
+    "**Accept**: offer 178 went from Pending to Accepted with a joining date of 2026-12-21, and the history "
     "went from [Created] to [Created, Accepted] in one request.",
     "**Decline** of a student's only offer: the offer became Declined and `placement_status` returned from "
     "Placed to Not Placed, together with the history row.",
@@ -640,10 +694,10 @@ table("Top recruiters by offers (company_wise_stats_view)", ["Company", "Offers"
     ["Bluepeak Software", "8", "14.62"],
     ["Meridian Consulting", "8", "10.14"],
 ], widths=[7, 3, 6])
-P("Offers per month (from `placement_timeline_view`) were 3, 7, 1, 36, 114, 0 and 16 for August 2025 to "
-  "February 2026, a running total of 177 (Figure 5). Capturing this screen exposed a defect. The first "
-  "version of the view only had rows for months with offers, so `LAG()` compared February with December, "
-  "because January had no offers, and reported a fall of 98. The view now generates every month between "
+P("Offers per month (from `placement_timeline_view`) were 114, 36, 1, 7 and 19 for May to September "
+  "2026, a running total of 177 (Figure 6). An earlier version of the data exposed a defect in this view. "
+  "It only had rows for months with offers, so with no offers in January 2026 `LAG()` compared February "
+  "with December and reported a fall of 98. The view now generates every month between "
   "the first and last offer (`generate_series` in PostgreSQL, `ADD_MONTHS` with `CONNECT BY LEVEL` in Oracle) "
   "and left-joins the counts, so January appears as 0 and February's change is +16. The fix was re-verified "
   "on both databases. It shows a general pitfall of `LAG()`: it reads the previous row, not the previous "
@@ -683,7 +737,7 @@ table("Model results on the held-out test set", ["Measure", "Value"], [
 ], widths=[6.5, 9.5])
 P("The coefficients point the expected way. CGPA has the largest positive weight (+1.496 log-odds per "
   "standard deviation), backlogs the largest negative (−1.136), and the skill count is positive (+0.819). "
-  "Department effects are smaller. Figure 7 shows the estimate as a student sees it.")
+  "Department effects are smaller. Figure 8 shows the estimate as a student sees it.")
 P("These results must be read with care. The test set has only 36 students, so one prediction changes "
   "accuracy by about 2.8 percentage points, and another random split could easily give 0.70 or 0.80. The data "
   "is synthetic, and the generator itself makes CGPA, backlogs and skills predictive, so the model largely "
@@ -703,7 +757,9 @@ P("PlaceIQ shows that a placement office's rules can live in the database rather
   "directly to PostgreSQL. The offer transactions are atomic and remain correct under concurrent requests "
   "because the trigger locks the student's row. Window functions and a materialized view supply the "
   "analytics. The indexes were measured rather than assumed: up to 81× faster for selective lookups, "
-  "and negligible on a tiny table. The same design runs on Oracle 21c with all 82 objects valid.")
+  "and negligible on a tiny table. The same design runs on Oracle 21c with all 82 objects valid. The "
+  "system runs from one address and starts with one command, as a desktop app or on a shareable link, "
+  "all with free tools.")
 H("Limitations", 3)
 bullets([
     "**Synthetic data.** All students, companies and outcomes are generated. The analytics describe the "
@@ -714,11 +770,13 @@ bullets([
     "**Small ML evaluation.** The model was tested on 36 synthetic students with a single split. Its accuracy "
     "is a rough figure, and its strength largely reflects how the data was generated.",
     "**Oracle port covers the database layer only.** The backend runs only against PostgreSQL. Mapping "
-    "Oracle's −20001 to −20007 errors in the backend and the Oracle date arithmetic in the offer service were "
+    "Oracle's −20001 to −20008 errors in the backend and the Oracle date arithmetic in the offer service were "
     "not built. On Oracle, the concurrent-acceptance behaviour rests on documented locking and was not "
     "demonstrated, because the demo is a single SQL*Plus session. Oracle has no `CONCURRENTLY` refresh option.",
-    "**Seeded timestamps.** The seed leaves application and status-history timestamps at the time it ran, so "
-    "in the demo data an application can appear to be dated after its drive.",
+    "**Deployment needs Docker Desktop.** The desktop app and the one-command start need Docker Desktop "
+    "installed; the app does not bundle it, and the .exe is unsigned, so Windows SmartScreen may warn.",
+    "**Temporary public link.** The Cloudflare quick-tunnel address lasts only while the laptop runs it. "
+    "The permanent free hosting in `DEPLOY_FREE.md` was not deployed, and free tiers have cold starts.",
     "**Placement policy.** A placed student may keep applying to other drives. Many colleges restrict this, "
     "and the rule would be one more trigger.",
 ])
@@ -755,6 +813,10 @@ refs = [
     "M. Jones, J. Bradley, and N. Sakimura, \"JSON Web Token (JWT),\" RFC 7519, Internet Engineering Task Force, 2015. [Online]. Available: https://www.rfc-editor.org/rfc/rfc7519",
     "Psycopg – PostgreSQL database adapter for Python, documentation. [Online]. Available: https://www.psycopg.org/docs/",
     "Oracle, \"PL/SQL triggers,\" Oracle Database PL/SQL Language Reference, 21c. [Online]. Available: https://docs.oracle.com/en/database/oracle/oracle-database/21/lnpls/plsql-triggers.html",
+    "Pylons Project, \"waitress: a production-quality pure-Python WSGI server,\" documentation. [Online]. Available: https://docs.pylonsproject.org/projects/waitress/en/stable/",
+    "Docker Inc., \"Docker Compose,\" Docker documentation. [Online]. Available: https://docs.docker.com/compose/",
+    "OpenJS Foundation, \"Electron documentation.\" [Online]. Available: https://www.electronjs.org/docs/latest",
+    "Cloudflare, \"Quick tunnels (TryCloudflare),\" Cloudflare Zero Trust documentation. [Online]. Available: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/",
 ]
 for i, ref in enumerate(refs, 1):
     par = doc.add_paragraph()

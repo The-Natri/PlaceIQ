@@ -66,7 +66,7 @@ def fresh():
     row = q("""
         SELECT s.student_id, s.email, d.drive_id
         FROM student s CROSS JOIN drive d
-        WHERE s.placement_status = 'Not Placed' AND d.status IN ('Upcoming', 'Ongoing')
+        WHERE s.placement_status = 'Not Placed' AND d.status IN ('Upcoming', 'Ongoing') AND d.application_deadline >= CURRENT_DATE
           AND fn_check_eligibility(s.student_id, d.drive_id)
           AND NOT EXISTS (SELECT 1 FROM application a WHERE a.student_id = s.student_id AND a.drive_id = d.drive_id)
           AND s.student_id <> ALL(%s)
@@ -107,7 +107,7 @@ def completed_drive():
 
 
 def ineligible_open_drive(stu):
-    return q("""SELECT drive_id FROM drive WHERE status IN ('Upcoming','Ongoing')
+    return q("""SELECT drive_id FROM drive WHERE status IN ('Upcoming','Ongoing') AND application_deadline >= CURRENT_DATE
                 AND NOT fn_check_eligibility(%s, drive_id) LIMIT 1""", stu["id"])[0]["drive_id"]
 
 
@@ -324,6 +324,10 @@ def backend_routes():
     routes = set()
     for rule in create_app().url_map.iter_rules():
         if not rule.rule.startswith("/api"):
+            continue
+        # The catch-all that answers unknown /api paths with a JSON 404
+        # (app.py, api_not_found) is not an endpoint, so it isn't documented.
+        if rule.endpoint == "api_not_found":
             continue
         path = re.sub(r"<(?:int:)?([a-z_]+)>", ":id", rule.rule)
         for m in rule.methods - {"HEAD", "OPTIONS"}:

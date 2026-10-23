@@ -31,3 +31,9 @@ Thumbs.db
 
 # Local database backups
 db/backups/
+
+# Process ids and logs of start.ps1 / start.sh
+.run/
+
+# Downloaded tools (cloudflared for scripts/share.*)
+tools/

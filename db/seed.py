@@ -34,7 +34,7 @@ credentials below are not real people, institutions, or organizations.
 import math
 import os
 import random
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 import bcrypt
 import psycopg2
@@ -46,6 +46,30 @@ from dotenv import load_dotenv
 # stable dataset instead of chasing a moving target).
 # ---------------------------------------------------------------------------
 random.seed(42)
+
+# Dates use their OWN generator. The main one above decides who applies, who
+# is selected and who is placed. If date jitter drew from it too, every later
+# draw would shift and the whole dataset (and the ML model trained on it)
+# would change. Kept separate, the outcomes stay identical whatever is done
+# to the dates.
+DATES = random.Random(7)
+
+# Every date is placed relative to "today", so the data is always
+# consistent with the clock: Completed drives are in the past, Ongoing drives
+# still take applications, Upcoming drives are in the future, and nothing is
+# dated after the moment the seed ran. "Today" is the DATABASE's date, set in
+# main(): the trigger that refuses future-dated applications uses the
+# database clock, and the database (UTC in Docker) can be on a different date
+# from this machine's local time near midnight. SEED_TODAY=YYYY-MM-DD pins
+# the anchor when a run must be reproduced exactly (it must not be in the
+# future).
+TODAY = None
+
+
+def at(day: date, earliest_hour: int = 9, latest_hour: int = 18) -> datetime:
+    """A timestamp on `day` during office hours."""
+    return datetime.combine(day, time(DATES.randint(earliest_hour, latest_hour), DATES.randint(0, 59)))
+
 
 load_dotenv()
 DATABASE_URL = os.environ.get(
@@ -137,18 +161,31 @@ COMPANIES = [
 ]
 
 
-def advance(cur, application_id, *statuses):
+def advance(cur, application_id, *steps):
     """
     Moves an application through each status in order, one UPDATE per step.
     trg_application_status_transition (schema.sql Section 6) only allows one
     legal pipeline step at a time, so jumping straight from Applied to
     Selected would be refused — and stepping through also gives the audit
     log (application_status_history) a realistic trail.
+
+    Each step is (status, when). The audit trigger stamps each change with the
+    real current time, but the seed replays months of history in a few
+    seconds, so it backdates the row the trigger just wrote to the simulated
+    moment. Only the seed does this: the application never edits audit rows.
     """
-    for status in statuses:
+    for status, when in steps:
         cur.execute(
             "UPDATE application SET status=%s WHERE application_id=%s",
             (status, application_id),
+        )
+        cur.execute(
+            """
+            UPDATE application_status_history SET changed_at = %s
+             WHERE history_id = (SELECT MAX(history_id) FROM application_status_history
+                                  WHERE application_id = %s)
+            """,
+            (when, application_id),
         )
 
 
@@ -179,9 +216,17 @@ def selection_probability(cgpa, backlogs, skill_count, drive):
 
 
 def main():
+    global TODAY
     conn = psycopg2.connect(DATABASE_URL)
     conn.autocommit = False
     cur = conn.cursor()
+
+    if os.environ.get("SEED_TODAY"):
+        TODAY = date.fromisoformat(os.environ["SEED_TODAY"])
+    else:
+        cur.execute("SELECT CURRENT_DATE")
+        TODAY = cur.fetchone()[0]
+    print(f"Dates are placed relative to {TODAY} (the database's current date).")
 
     print("Clearing existing data (TRUNCATE ... RESTART IDENTITY CASCADE)...")
     cur.execute(
@@ -325,7 +370,6 @@ def main():
                       "Full Stack Developer", "ML Engineer", "QA Engineer"]
     ROLES_CORE = ["Graduate Engineer Trainee", "Design Engineer", "Field Engineer", "Core Engineer"]
 
-    season_start = date(2025, 8, 1)
     drives = []  # dicts: id, company_id, tier, min_cgpa, max_backlogs, package, status, restricted_depts
     coord_cycle = 0
 
@@ -338,10 +382,25 @@ def main():
             package = round(random.uniform(*tier_cfg["package"]), 2)
             role = random.choice(ROLES_SOFTWARE if sw else ROLES_CORE)
             drive_type = random.choices(["Full-Time", "Internship"], weights=[80, 20])[0]
-            drive_date = season_start + timedelta(days=random.randint(0, 210))
+            # This draw stays on the main generator, in its original place, so
+            # every later outcome is unchanged. It spreads the season out.
+            season_offset = random.randint(0, 210)
             status = random.choices(
                 ["Completed", "Ongoing", "Upcoming"], weights=[65, 25, 10]
             )[0]
+            # The status decides where the drive sits relative to today. The
+            # deadline always comes before the drive day.
+            if status == "Completed":
+                # 1 to 7 months ago, so its rounds and offers are in the past too.
+                drive_date = TODAY - timedelta(days=30 + season_offset % 180)
+                deadline = drive_date - timedelta(days=DATES.randint(3, 7))
+            elif status == "Ongoing":
+                # Still taking applications; shortlisting has started.
+                deadline = TODAY + timedelta(days=DATES.randint(3, 10))
+                drive_date = deadline + timedelta(days=DATES.randint(2, 5))
+            else:  # Upcoming: just announced
+                deadline = TODAY + timedelta(days=DATES.randint(10, 30))
+                drive_date = deadline + timedelta(days=DATES.randint(3, 7))
             coordinator_id = coordinator_ids[coord_cycle % len(coordinator_ids)]
             coord_cycle += 1
 
@@ -354,12 +413,12 @@ def main():
             cur.execute(
                 """
                 INSERT INTO drive
-                    (company_id, coordinator_id, job_role, drive_date, package_lpa,
-                     min_cgpa, max_backlogs, drive_type, status)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    (company_id, coordinator_id, job_role, drive_date, application_deadline,
+                     package_lpa, min_cgpa, max_backlogs, drive_type, status)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 RETURNING drive_id
                 """,
-                (company_id, coordinator_id, role, drive_date, package,
+                (company_id, coordinator_id, role, drive_date, deadline, package,
                  min_cgpa, max_backlogs, drive_type, insert_status),
             )
             drive_id = cur.fetchone()[0]
@@ -380,7 +439,7 @@ def main():
             drives.append({
                 "id": drive_id, "min_cgpa": min_cgpa, "max_backlogs": max_backlogs,
                 "package": package, "status": status, "difficulty": tier_cfg["difficulty"],
-                "drive_type": drive_type, "drive_date": drive_date,
+                "drive_type": drive_type, "drive_date": drive_date, "deadline": deadline,
             })
 
     conn.commit()
@@ -414,10 +473,19 @@ def main():
         applicants = [s for s in eligible_students if random.random() < APPLY_PROB]
 
         for s in applicants:
+            # Applied within the application window: on or before the
+            # deadline (enforced by the database, PL008) and never after
+            # today. Ongoing drives' deadlines are still ahead, so their
+            # applications are spread over the last three weeks.
+            if drive["status"] == "Ongoing":
+                applied_day = TODAY - timedelta(days=DATES.randint(2, 20))
+            else:
+                applied_day = drive["deadline"] - timedelta(days=DATES.randint(0, 20))
+            applied_at = at(applied_day)
             cur.execute(
-                "INSERT INTO application (student_id, drive_id, status) "
-                "VALUES (%s,%s,%s) RETURNING application_id",
-                (s["id"], drive["id"], "Applied"),
+                "INSERT INTO application (student_id, drive_id, status, applied_at) "
+                "VALUES (%s,%s,%s,%s) RETURNING application_id",
+                (s["id"], drive["id"], "Applied", applied_at),
             )
             application_id = cur.fetchone()[0]
             n_applications += 1
@@ -431,22 +499,32 @@ def main():
                     weights=[55, 25, 20],
                 )[0]
                 if partial_status != "Applied":
-                    cur.execute(
-                        "UPDATE application SET status=%s WHERE application_id=%s",
-                        (partial_status, application_id),
-                    )
+                    # The move happened after applying and before today.
+                    moved_day = min(applied_day + timedelta(days=DATES.randint(1, 3)), TODAY - timedelta(days=1))
+                    advance(cur, application_id, (partial_status, at(moved_day)))
+                if partial_status == "Interview_Scheduled":
+                    # Scheduled for the drive day, which is still ahead, so
+                    # the round has no result yet.
                     cur.execute(
                         "INSERT INTO interview_round "
                         "(application_id, round_number, round_type, round_date, result) "
-                        "VALUES (%s,1,%s,%s,'Pass')",
+                        "VALUES (%s,1,%s,%s,'Pending')",
                         (application_id, "Aptitude", drive["drive_date"]),
                     )
                 continue
 
             # drive["status"] == "Completed": run the full simulation.
+            # Timeline: applied -> shortlisted the day after the deadline ->
+            # round 1 on the drive day, one round a day -> offer two days
+            # after the final round.
             n_rounds = 2 if drive["drive_type"] == "Internship" else 3
             round_types = (["Aptitude", "Technical"] if n_rounds == 2
                             else ["Aptitude", "Technical", "HR"])
+            shortlist_at = at(drive["deadline"] + timedelta(days=1), 9, 12)
+            scheduled_at = shortlist_at + timedelta(hours=2)
+
+            def round_day(i):
+                return drive["drive_date"] + timedelta(days=i - 1)
 
             p_select = selection_probability(s["cgpa"], s["backlogs"], s["skill_count"], drive)
             selected = random.random() < p_select
@@ -457,12 +535,15 @@ def main():
                         "INSERT INTO interview_round "
                         "(application_id, round_number, round_type, round_date, result) "
                         "VALUES (%s,%s,%s,%s,'Pass')",
-                        (application_id, i, rtype, drive["drive_date"] + timedelta(days=i)),
+                        (application_id, i, rtype, round_day(i)),
                     )
-                advance(cur, application_id, "Shortlisted", "Interview_Scheduled", "Selected")
+                offer_date = round_day(n_rounds) + timedelta(days=2)
+                advance(cur, application_id,
+                        ("Shortlisted", shortlist_at),
+                        ("Interview_Scheduled", scheduled_at),
+                        ("Selected", at(round_day(n_rounds) + timedelta(days=1))))
 
                 offered_package = round(max(drive["package"] + random.uniform(-0.5, 1.5), 1.0), 2)
-                offer_date = drive["drive_date"] + timedelta(days=n_rounds + 2)
                 offer_status = random.choices(
                     ["Accepted", "Pending", "Declined"], weights=[70, 18, 12]
                 )[0]
@@ -485,20 +566,21 @@ def main():
                 offer_id = cur.fetchone()[0]
                 n_offers += 1
 
+                offer_made_at = at(offer_date, 10, 12)
                 cur.execute(
                     "INSERT INTO offer_history (offer_id, action, action_timestamp, notes) "
                     "VALUES (%s,'Created',%s,'Offer generated by seed script')",
-                    (offer_id, offer_date),
+                    (offer_id, offer_made_at),
                 )
                 if offer_status in ("Accepted", "Declined"):
                     cur.execute(
                         "INSERT INTO offer_history (offer_id, action, action_timestamp, notes) "
                         "VALUES (%s,%s,%s,%s)",
-                        (offer_id, offer_status, offer_date + timedelta(days=3),
+                        (offer_id, offer_status, at(offer_date + timedelta(days=3)),
                          f"Candidate {offer_status.lower()} the offer"),
                     )
 
-                advance(cur, application_id, "Offer_Made")
+                advance(cur, application_id, ("Offer_Made", offer_made_at))
             else:
                 fail_at = random.randint(1, n_rounds)
                 for i, rtype in enumerate(round_types, start=1):
@@ -512,15 +594,20 @@ def main():
                         "INSERT INTO interview_round "
                         "(application_id, round_number, round_type, round_date, result) "
                         "VALUES (%s,%s,%s,%s,%s)",
-                        (application_id, i, rtype, drive["drive_date"] + timedelta(days=i), result),
+                        (application_id, i, rtype, round_day(i), result),
                     )
                 # Failing the first (screening) round means rejected straight
                 # from Applied; failing a later round means the student had
-                # been shortlisted and interviewed first.
+                # been shortlisted and interviewed first. Either way the
+                # rejection is recorded on the day of the failed round.
+                rejected_at = at(round_day(fail_at), 17, 19)
                 if fail_at == 1:
-                    advance(cur, application_id, "Rejected")
+                    advance(cur, application_id, ("Rejected", rejected_at))
                 else:
-                    advance(cur, application_id, "Shortlisted", "Interview_Scheduled", "Rejected")
+                    advance(cur, application_id,
+                            ("Shortlisted", shortlist_at),
+                            ("Interview_Scheduled", scheduled_at),
+                            ("Rejected", rejected_at))
 
         if drive["status"] == "Completed":
             cur.execute(

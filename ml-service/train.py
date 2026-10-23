@@ -39,7 +39,8 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "postgresql://placement_admin:placement_dev_password@localhost:5432/placement_db",
 )
-MODEL_PATH = os.path.join(_here, "model", "model.joblib")
+# MODEL_PATH lets Docker keep the trained model in a volume across restarts.
+MODEL_PATH = os.environ.get("MODEL_PATH", os.path.join(_here, "model", "model.joblib"))
 
 FEATURE_COLUMNS = ["cgpa", "backlogs", "dept_id", "skill_count"]
 NUMERIC_FEATURES = ["cgpa", "backlogs", "skill_count"]
